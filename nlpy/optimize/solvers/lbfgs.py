@@ -2,6 +2,7 @@ from nlpy.optimize.ls.pymswolfe import StrongWolfeLineSearch
 from nlpy.tools import norms
 from nlpy.tools.timing import cputime
 import numpy
+import numpy.linalg
 import sys
 
 __docformat__ = 'restructuredtext'
@@ -139,6 +140,74 @@ class InverseLBFGS:
         This is an alias for matvec.
         """
         return self.matvec(v)
+
+
+class DirectLBFGS(InverseLBFGS):
+    """
+    Class DirectLBFGS is similar to InverseLBFGS, except that it operates 
+    on the Hessian approximation directly, rather than forming the inverse. 
+    Additional information is stored to compute this approximation 
+    efficiently.
+
+    This form is useful in trust region methods, where the approximate Hessian 
+    is used in the model problem.
+    """
+
+    def matvec(self, v):
+        """
+        Compute a matrix-vector product between the current limited-memory
+        positive-definite approximation to the direct Hessian matrix and the
+        vector v using the outer product representation.
+        """
+        self.numMatVecs += 1
+
+        q = v.copy()
+        r = v.copy()
+        s = self.s ; y = self.y ; ys = self.ys
+        prodn = 2*self.npairs
+        a = numpy.empty(prodn,'d')
+        minimat = numpy.empty([prodn,prodn],'d')
+
+        if self.scaling:
+            last = (self.insert - 1) % self.npairs
+            if ys[last] is not None:
+                self.gamma = ys[last]/numpy.dot(y[:,last],y[:,last])
+                r /= self.gamma
+
+        paircount = 0
+        for i in range(self.npairs):
+            k = (self.insert - 1 - i) % self.npairs
+            if ys[k] is not None:
+                a[i] = numpy.dot(r[:],s[:,k])
+                paircount += 1
+
+        for i in range(self.npairs):
+            k = (self.insert - 1 - i) % self.npairs
+            if ys[k] is not None:
+                a[i+paircount] = numpy.dot(q[:],y[:,k])
+
+        # Populate small matrix to be inverted
+        for i in range(paircount):
+            k = (self.insert + i) % self.npairs
+            minimat[paircount+i,paircount+i] = -ys[k]
+            minimat[i,i] = numpy.dot(s[:,k],s[:,k])/self.gamma
+            for j in range(i):
+                l = (self.insert + j) % self.npairs
+                minimat[i,paircount+j] = numpy.dot(s[:,k],y[:,l])
+                minimat[paircount+i,j] = minimat[i,paircount+j]
+                minimat[i,j] = numpy.dot(s[:,k],s[:,l])/self.gamma
+                minimat[j,i] = minimat[i,j]
+
+        if paircount > 0:
+            rng = range(2*paircount)
+            a[rng] = numpy.linalg.solve(minimat[rng,rng],a[rng])
+
+        for i in range(paircount):
+            k = (self.insert + i) % self.npairs
+            r -= (a[i]/self.gamma)*s[:,k]
+            r -= a[i+paircount]*y[:,k]            
+
+        return r
 
 
 class LBFGSFramework:

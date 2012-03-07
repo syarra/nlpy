@@ -25,6 +25,20 @@ import pdb
 __docformat__ = 'restructuredtext'
 
 
+class NullHandler(logging.Handler):
+    '''
+    A simple implementation of the null handler for Python 2.6.x (and older?)
+    '''
+    def emit(self, record):
+        pass
+
+    def handle(self, record):
+        pass
+
+    def createLock(self):
+        return None
+
+
 class SufficientDecreaseCG(TruncatedCG):
     """
     An implementation of the conjugate-gradient algorithm with
@@ -99,7 +113,10 @@ class BQP(object):
 
         # Create a logger for solver.
         self.log = logging.getLogger('bqp.solver')
-        self.log.addHandler(logging.NullHandler())
+        try:
+            self.log.addHandler(logging.NullHandler()) # Python 2.7.x
+        except:
+            self.log.addHandler(NullHandler())  # For Python 2.6.x and older
 
 
     def check_feasible(self, x):
