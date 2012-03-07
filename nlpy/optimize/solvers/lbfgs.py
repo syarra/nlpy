@@ -153,11 +153,17 @@ class DirectLBFGS(InverseLBFGS):
     is used in the model problem.
     """
 
+    def __init__(self, n, npairs=5, **kwargs):
+        InverseLBFGS.__init__(self, n, npairs, **kwargs)
+
     def matvec(self, v):
         """
         Compute a matrix-vector product between the current limited-memory
         positive-definite approximation to the direct Hessian matrix and the
         vector v using the outer product representation.
+
+        Note: there is probably some optimization that could be done in this 
+        function with respect to memory use.
         """
         self.numMatVecs += 1
 
@@ -165,8 +171,8 @@ class DirectLBFGS(InverseLBFGS):
         r = v.copy()
         s = self.s ; y = self.y ; ys = self.ys
         prodn = 2*self.npairs
-        a = numpy.empty(prodn,'d')
-        minimat = numpy.empty([prodn,prodn],'d')
+        a = numpy.zeros(prodn,'d')
+        minimat = numpy.zeros([prodn,prodn],'d')
 
         if self.scaling:
             last = (self.insert - 1) % self.npairs
@@ -176,36 +182,43 @@ class DirectLBFGS(InverseLBFGS):
 
         paircount = 0
         for i in range(self.npairs):
-            k = (self.insert - 1 - i) % self.npairs
+            k = (self.insert + i) % self.npairs
             if ys[k] is not None:
                 a[i] = numpy.dot(r[:],s[:,k])
                 paircount += 1
 
         for i in range(self.npairs):
-            k = (self.insert - 1 - i) % self.npairs
+            k = (self.insert + i) % self.npairs
             if ys[k] is not None:
-                a[i+paircount] = numpy.dot(q[:],y[:,k])
+                a[paircount+i] = numpy.dot(q[:],y[:,k])
 
         # Populate small matrix to be inverted
-        for i in range(paircount):
+        k_ind = 0
+        for i in range(self.npairs):
             k = (self.insert + i) % self.npairs
-            minimat[paircount+i,paircount+i] = -ys[k]
-            minimat[i,i] = numpy.dot(s[:,k],s[:,k])/self.gamma
-            for j in range(i):
-                l = (self.insert + j) % self.npairs
-                minimat[i,paircount+j] = numpy.dot(s[:,k],y[:,l])
-                minimat[paircount+i,j] = minimat[i,paircount+j]
-                minimat[i,j] = numpy.dot(s[:,k],s[:,l])/self.gamma
-                minimat[j,i] = minimat[i,j]
+            if ys[k] is not None:
+                minimat[paircount+k_ind,paircount+k_ind] = -ys[k]
+                minimat[k_ind,k_ind] = numpy.dot(s[:,k],s[:,k])/self.gamma
+                l_ind = 0
+                for j in range(i):
+                    l = (self.insert + j) % self.npairs
+                    if ys[l] is not None:
+                        minimat[k_ind,paircount+l_ind] = numpy.dot(s[:,k],y[:,l])
+                        minimat[paircount+l_ind,k_ind] = minimat[k_ind,paircount+l_ind]
+                        minimat[k_ind,l_ind] = numpy.dot(s[:,k],s[:,l])/self.gamma
+                        minimat[l_ind,k_ind] = minimat[k_ind,l_ind]
+                        l_ind += 1
+                k_ind += 1
 
         if paircount > 0:
-            rng = range(2*paircount)
-            a[rng] = numpy.linalg.solve(minimat[rng,rng],a[rng])
+            rng = 2*paircount
+            b = numpy.linalg.solve(minimat[0:rng,0:rng],a[0:rng])
 
         for i in range(paircount):
             k = (self.insert + i) % self.npairs
-            r -= (a[i]/self.gamma)*s[:,k]
-            r -= a[i+paircount]*y[:,k]            
+            if ys[k] is not None:
+                r -= (b[i]/self.gamma)*s[:,k]
+                r -= b[i+paircount]*y[:,k]            
 
         return r
 
@@ -251,6 +264,8 @@ class LBFGSFramework:
         self.converged = False
 
         self.lbfgs = InverseLBFGS(self.nlp.n, **kwargs)
+        # Code for testing DirectLBFGS
+        self.alt_lbfgs = DirectLBFGS(self.nlp.n, **kwargs)
 
         self.x = kwargs.get('x0', self.nlp.x0)
         self.f = self.nlp.obj(self.x)
@@ -311,6 +326,9 @@ class LBFGSFramework:
             # Update inverse Hessian approximation using the most recent pair
             self.lbfgs.store(s, y)
             self.iter += 1
+
+            # Code for testing the DirectLBFGS implementation
+            self.alt_lbfgs.store(s, y)
 
         self.tsolve = cputime() - tstart
         self.converged = (self.iter < self.maxiter)
