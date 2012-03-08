@@ -12,7 +12,7 @@ a limited-memory BFGS approximation to its inverse.
 """
 
 from nlpy.model.amplpy import AmplModel
-from nlpy.optimize.solvers.lbfgs import InverseLBFGS
+from nlpy.optimize.solvers.lbfgs import InverseLBFGS,LBFGS
 from nlpy.optimize.solvers.trunk import TrunkFramework
 import numpy as np
 
@@ -32,6 +32,20 @@ class LDFP(InverseLBFGS):
     def store(self, new_s, new_y):
         # Simply swap s and y.
         InverseLBFGS.store(self, new_y, new_s)
+
+
+class InverseLDFP(LBFGS):
+    """
+    Similar to LDFP, a limited-memory framework for the inverse LDFP matrix.
+    See the documentation of the class `LBFGS`.
+    """
+
+    def __init__(self, n, npairs=5, **kwargs):
+        LBFGS.__init__(self, n, npairs, **kwargs)
+
+    def store(self, new_s, new_y):
+        # Simply swap s and y.
+        LBFGS.store(self, new_y, new_s)
 
 
 class StructuredLDFP(InverseLBFGS):

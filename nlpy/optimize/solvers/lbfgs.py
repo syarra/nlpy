@@ -142,9 +142,9 @@ class InverseLBFGS:
         return self.matvec(v)
 
 
-class DirectLBFGS(InverseLBFGS):
+class LBFGS(InverseLBFGS):
     """
-    Class DirectLBFGS is similar to InverseLBFGS, except that it operates 
+    Class LBFGS is similar to InverseLBFGS, except that it operates 
     on the Hessian approximation directly, rather than forming the inverse. 
     Additional information is stored to compute this approximation 
     efficiently.
@@ -163,7 +163,7 @@ class DirectLBFGS(InverseLBFGS):
         vector v using the outer product representation.
 
         Note: there is probably some optimization that could be done in this 
-        function with respect to memory use.
+        function with respect to memory use and storing key dot products.
         """
         self.numMatVecs += 1
 
@@ -264,8 +264,8 @@ class LBFGSFramework:
         self.converged = False
 
         self.lbfgs = InverseLBFGS(self.nlp.n, **kwargs)
-        # Code for testing DirectLBFGS
-        self.alt_lbfgs = DirectLBFGS(self.nlp.n, **kwargs)
+        # Code for testingLBFGS
+        self.alt_lbfgs = LBFGS(self.nlp.n, **kwargs)
 
         self.x = kwargs.get('x0', self.nlp.x0)
         self.f = self.nlp.obj(self.x)
@@ -327,7 +327,7 @@ class LBFGSFramework:
             self.lbfgs.store(s, y)
             self.iter += 1
 
-            # Code for testing the DirectLBFGS implementation
+            # Code for testing the LBFGS implementation
             self.alt_lbfgs.store(s, y)
 
         self.tsolve = cputime() - tstart
