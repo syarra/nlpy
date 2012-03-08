@@ -88,6 +88,16 @@ class InverseLBFGS:
             self.insert = self.insert % self.npairs
         return
 
+    def restart(self):
+        """
+        Restart the approximation by clearing all data on past updates.
+        """
+        self.ys = [None] * self.npairs
+        self.s = numpy.empty((self.n, self.npairs), 'd')
+        self.y = numpy.empty((self.n, self.npairs), 'd')
+        self.insert = 0
+        return
+
     def matvec(self, v):
         """
         Compute a matrix-vector product between the current limited-memory
