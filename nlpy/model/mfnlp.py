@@ -39,7 +39,7 @@ class MFModel(NLPModel):
 	def __init__(self, n=0, m=0, name='Generic Matrix-Free', **kwargs):
 
 		# Standard NLP initialization
-		NLPModel.__init__(n,m,name,**kwargs)
+		NLPModel.__init__(self,n=n,m=m,name=name,**kwargs)
 
 		# Additional elements for this class
 		self.JTprod = 0	# Counter for Jacobian-transpose products

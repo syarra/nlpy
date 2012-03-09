@@ -23,12 +23,12 @@ import numpy
 # =============================================================================
 from nlpy.model.nlp import NLPModel
 from nlpy.model.mfnlp import MFModel
+from nlpy.optimize.solvers.lbfgs import LBFGS
 
 # =============================================================================
 # Augmented Lagrangian Problem Class
 # =============================================================================
 class AugmentedLagrangian(NLPModel):
-
 	'''
 	This class is a reformulation of an NLP, used to compute the 
 	augmented Lagrangian function, gradient, and approximate Hessian in a 
@@ -47,54 +47,60 @@ class AugmentedLagrangian(NLPModel):
 
 		# Temporary error message as the class does not yet support 
 		# range constraints
-        if nlp.nrangeC:
-            msg = 'Range inequality constraints are not supported.'
-            raise ValueError, msg
+		if nlp.nrangeC > 0:
+			msg = 'Range inequality constraints are not supported.'
+			raise ValueError, msg
 
-        # Analyze NLP to add slack variables to the formulation
-        # Ordering of the slacks in 'x' is assumed to be the order shown here
-        self.nx = nlp.n
-        self.nsLL = nlp.nlowerC
-        self.nsUU = nlp.nupperC
-        # self.nsLR = nlp.nrangeC
-        # self.nsUR = nlp.nrangeC
-        self.ns = nlp.nlowerC + nlp.nupperC + 2*nlp.nrangeC
-        self.n = self.nx + self.ns
-        self.m = nlp.m 
+		# Analyze NLP to add slack variables to the formulation
+		# Ordering of the slacks in 'x' is assumed to be the order shown here
+		self.nx = nlp.n
+		self.nsLL = nlp.nlowerC
+		self.nsUU = nlp.nupperC
+		# self.nsLR = nlp.nrangeC
+		# self.nsUR = nlp.nrangeC
+		self.ns = nlp.nlowerC + nlp.nupperC + 2*nlp.nrangeC
+		self.n = self.nx + self.ns
+		self.m = nlp.m 
 
-        # Copy initial data from NLP given new problem definition
-        # Initialize slack variables to zero
-        self.x0 = numpy.zeros(self.n,'d')
-        self.x0[:self.nx] = nlp.x0
+		# Copy initial data from NLP given new problem definition
+		# Initialize slack variables to zero
+		self.x0 = numpy.zeros(self.n,'d')
+		self.x0[:self.nx] = nlp.x0
 
-        self.pi0 = nlp.pi0.copy()
+		self.pi0 = nlp.pi0.copy()
 
-        # Create Hessian approximation by default
-        self.approxHess = kwargs.get('approxHess',True)
-        if self.approxHess:
-        	# LBFGS is currently the only option
-        	self.Hessapp = LBFGS(self.nx)
+		# Create Hessian approximation by default
+		self.approxHess = kwargs.get('approxHess',True)
+		if self.approxHess:
+			# LBFGS is currently the only option
+			self.Hessapp = LBFGS(self.nx)
 
-        # Extend bound arrays to include slack variables
-        self.Lvar = numpy.zeros(self.n,'d')
-        self.Lvar[:self.nx] = nlp.Lvar
+		# Extend bound arrays to include slack variables
+		self.Lvar = numpy.zeros(self.n,'d')
+		self.Lvar[:self.nx] = nlp.Lvar
 
-        self.Uvar = nlp.Infinity*numpy.ones(self.n,'d')
-        self.Uvar[:self.nx] = nlp.Uvar
+		self.Uvar = nlp.Infinity*numpy.ones(self.n,'d')
+		self.Uvar[:self.nx] = nlp.Uvar
 
-        # Bring in bound arrays for constraints and lists of constraint types
-        self.Lcon = nlp.Lcon
-        self.Ucon = nlp.Ucon
-        self.lowerC = nlp.lowerC
-        self.upperC = nlp.upperC
-        # self.rangeC = nlp.rangeC
-        self.equalC = nlp.equalC
+		# Bring in bound arrays for constraints and lists of constraint types
+		self.Lcon = nlp.Lcon
+		self.Ucon = nlp.Ucon
+		self.lowerC = nlp.lowerC
+		self.upperC = nlp.upperC
+		# self.rangeC = nlp.rangeC
+		self.equalC = nlp.equalC
 
 	# end def 
 
 
 	# Evaluate infeasibility measure (used in both objective and gradient)
 	def get_infeas(self, x, **kwargs):
+		nx = self.nx
+		nsLL_ind = nx + self.nsLL
+		nsUU_ind = nsLL_ind + self.nsUU
+		# nsLR_ind = nsUU_ind + self.nsLR
+		# nsUR_ind = nsLR_ind + self.nsUR
+
 		convals = self.nlp.cons(x[:nx])
 		convals[self.lowerC] -= x[nx:nsLL_ind] + self.Lcon[self.lowerC]
 		convals[self.upperC] += x[nsLL_ind:nsUU_ind] - self.Ucon[self.upperC]
@@ -181,7 +187,7 @@ class AugmentedLagrangian(NLPModel):
 		if self.approxHess:
 			# Approximate Hessian
 			w[:nx] = self.Hessapp.matvec(v[:nx])
-		else
+		else:
 			# Exact Hessian
 			# Note: the code in this block has yet to be properly tested
 			convals = self.get_infeas(x)
@@ -259,8 +265,6 @@ class AugmentedLagrangianFramework(object):
 
 		# (Future: create a logger to track problem data and print)
 
-        return
-
 	# end def 
 
 
@@ -304,26 +308,26 @@ class AugmentedLagrangianFramework(object):
 			# Update penalty parameter or multipliers based on result 
 			convals_new = self.alprob.get_infeas(x)
 			max_cons_new = numpy.max(numpy.abs(convals_new))
-            if max_cons_new <= eta:
-            	# Update convergence check
-            	dphi = self.alprob.grad(x,pi,rho)
-            	Pdphi = self.alprob.project_gradient(x,dphi)
-            	Pmax_new = numpy.max(numpy.abs(Pdphi))
-            	if max_cons_new <= self.eta_opt and Pmax_new <= self.omega_opt:
-            		converged = True 
-            		break
-            	# No change in rho, tighten tolerances
-            	pi -= rho*convals_new
-            	eta /= rho**self.b_eta
-            	omega /= rho**self.b_omega
-            else:
-            	# Increase rho, reset tolerances based on new rho
-            	rho *= tau
-            	eta = rho**-self.a_eta
-            	omega = rho**-self.a_omega
-            # end if
+			if max_cons_new <= eta:
+				# Update convergence check
+				dphi = self.alprob.grad(x,pi,rho)
+				Pdphi = self.alprob.project_gradient(x,dphi)
+				Pmax_new = numpy.max(numpy.abs(Pdphi))
+				if max_cons_new <= self.eta_opt and Pmax_new <= self.omega_opt:
+					converged = True 
+					break
+				# No change in rho, tighten tolerances
+				pi -= rho*convals_new
+				eta /= rho**self.b_eta
+				omega /= rho**self.b_omega
+			else:
+				# Increase rho, reset tolerances based on new rho
+				rho *= tau
+				eta = rho**-self.a_eta
+				omega = rho**-self.a_omega
+			# end if
 
-            n_iter += 1
+			n_iter += 1
 
 		# end while
 
