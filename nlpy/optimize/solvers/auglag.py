@@ -73,7 +73,7 @@ class AugmentedLagrangian(NLPModel):
 		self.approxHess = kwargs.get('approxHess',True)
 		if self.approxHess:
 			# LBFGS is currently the only option
-			self.Hessapp = LBFGS(self.nx)
+			self.Hessapp = LBFGS(self.n)
 
 		# Extend bound arrays to include slack variables
 		self.Lvar = numpy.zeros(self.n,'d')
@@ -186,7 +186,7 @@ class AugmentedLagrangian(NLPModel):
 		# Non-slack variables
 		if self.approxHess:
 			# Approximate Hessian
-			w[:nx] = self.Hessapp.matvec(v[:nx])
+			w = self.Hessapp.matvec(v)
 		else:
 			# Exact Hessian
 			# Note: the code in this block has yet to be properly tested
@@ -196,15 +196,18 @@ class AugmentedLagrangian(NLPModel):
 				w[:nx] += rho*convals[i]*nlp.hiprod(i,x[:nx],v[:nx])
 			# end for 
 			if isinstance(nlp, MFModel):
-				w[:nx] += rho*nlp.jtprod(x[:nx],nlp.jprod(x[:nx],v[:nx]))	
+				w[:nx] += rho*nlp.jtprod(x[:nx],nlp.jprod(x[:nx],v[:nx]))
+				w[:nx] += rho*nlp.jprod(x[:nx],v[:nx])
+				w[nx:] += rho*nlp.jtprod(x[:nx],v[nx:])
 			else:
 				J = nlp.jac
 				w[:nx] += rho*numpy.dot(J.transpose(),numpy.dot(J,v[:nx]))
+				w[:nx] += rho*numpy.dot(J,v[:nx])
+				w[nx:] += rho*numpy.dot(J.transpose(),v[nx:])
 			# end if
+			# Slack variables
+			w[nx:] += rho*v[nx:]
 		# end if 
-
-		# Slack variables
-		w[nx:] = rho*v[nx:]
 
 		return w 
 
