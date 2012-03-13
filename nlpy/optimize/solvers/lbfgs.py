@@ -225,7 +225,7 @@ class LBFGS(InverseLBFGS):
             b = numpy.linalg.solve(minimat[0:rng,0:rng],a[0:rng])
 
         for i in range(paircount):
-            k = (self.insert + i) % self.npairs
+            k = (self.insert - paircount + i) % self.npairs
             if ys[k] is not None:
                 r -= (b[i]/self.gamma)*s[:,k]
                 r -= b[i+paircount]*y[:,k]            
