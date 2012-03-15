@@ -228,7 +228,7 @@ class LBFGS(InverseLBFGS):
             k = (self.insert + i) % self.npairs
             if ys[k] is not None:
                 r -= (b[i]/self.gamma)*s[:,k]
-                r -= b[i+paircount]*y[:,k]            
+                r -= b[i+paircount]*y[:,k]
 
         return r
 
