@@ -113,7 +113,7 @@ class LDFPTrunkFramework(TrunkFramework):
         the most recent (s,y) pair to it and possibly discarding the oldest one
         if all the memory has been used.
         """
-        if self.status != 'Rej':
+        if self.step_status != 'Rej':
             s = self.alpha * self.solver.step
             y = self.g - self.g_old
             self.ldfp.store(s, y)

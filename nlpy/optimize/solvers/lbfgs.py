@@ -1,6 +1,7 @@
 from nlpy.optimize.ls.pymswolfe import StrongWolfeLineSearch
 from nlpy.tools import norms
 from nlpy.tools.timing import cputime
+from nlpy.optimize.solvers.trunk import TrunkFramework
 import numpy
 import numpy.linalg
 import sys
@@ -194,13 +195,15 @@ class LBFGS(InverseLBFGS):
         for i in range(self.npairs):
             k = (self.insert + i) % self.npairs
             if ys[k] is not None:
-                a[i] = numpy.dot(r[:],s[:,k])
+                a[paircount] = numpy.dot(r[:],s[:,k])
                 paircount += 1
 
+        j = 0
         for i in range(self.npairs):
             k = (self.insert + i) % self.npairs
             if ys[k] is not None:
-                a[paircount+i] = numpy.dot(q[:],y[:,k])
+                a[paircount+j] = numpy.dot(q[:],y[:,k])
+                j += 1
 
         # Populate small matrix to be inverted
         k_ind = 0
@@ -226,9 +229,8 @@ class LBFGS(InverseLBFGS):
 
         for i in range(paircount):
             k = (self.insert - paircount + i) % self.npairs
-            if ys[k] is not None:
-                r -= (b[i]/self.gamma)*s[:,k]
-                r -= b[i+paircount]*y[:,k]            
+            r -= (b[i]/self.gamma)*s[:,k]
+            r -= b[i+paircount]*y[:,k]            
 
         return r
 
@@ -275,7 +277,7 @@ class LBFGSFramework:
 
         self.lbfgs = InverseLBFGS(self.nlp.n, **kwargs)
         # Code for testingLBFGS
-        self.alt_lbfgs = LBFGS(self.nlp.n, **kwargs)
+        # self.alt_lbfgs = LBFGS(self.nlp.n, **kwargs)
 
         self.x = kwargs.get('x0', self.nlp.x0)
         self.f = self.nlp.obj(self.x)
@@ -338,7 +340,38 @@ class LBFGSFramework:
             self.iter += 1
 
             # Code for testing the LBFGS implementation
-            self.alt_lbfgs.store(s, y)
+            # self.alt_lbfgs.store(s, y)
 
         self.tsolve = cputime() - tstart
         self.converged = (self.iter < self.maxiter)
+
+
+# Subclass solver TRUNK to maintain an LBFGS approximation to the Hessian and
+# perform the LBFGS matrix update at the end of each iteration.
+# ** This solver is based on LDFPTrunkFramework, but with LBFGS instead of LDFP
+class LBFGSTrunkFramework(TrunkFramework):
+
+    def __init__(self, nlp, TR, TrSolver, **kwargs):
+        TrunkFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
+        self.lbfgs = LBFGS(self.nlp.n, **kwargs)
+        self.save_g = True
+
+    def hprod(self, v, **kwargs):
+        """
+        Compute the matrix-vector product between the limited-memory DFP
+        approximation kept in storage and the vector `v`.
+        """
+        return self.lbfgs.matvec(v)
+
+    def PostIteration(self, **kwargs):
+        """
+        This method updates the limited-memory DFP approximation by appending
+        the most recent (s,y) pair to it and possibly discarding the oldest one
+        if all the memory has been used.
+        """
+        if self.step_status != 'Rej':
+            s = self.alpha * self.solver.step
+            y = self.g - self.g_old
+            self.lbfgs.store(s, y)
+        return None
+

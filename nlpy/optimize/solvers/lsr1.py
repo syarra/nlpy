@@ -21,6 +21,7 @@ import numpy.linalg
 # Extension modules
 # =============================================================================
 from nlpy.optimize.solvers.lbfgs import InverseLBFGS
+from nlpy.optimize.solvers.trunk import TrunkFramework
 
 # =============================================================================
 # LSR1 Class
@@ -66,7 +67,7 @@ class LSR1(InverseLBFGS):
 		for i in range(npairs):
 			k = (self.insert + i) % self.npairs
 			if ys[k] is not None:
-				a[i] = numpy.dot(y[:,k],v[:]) - numpy.dot(s[:,k],q[:])
+				a[paircount] = numpy.dot(y[:,k],v[:]) - numpy.dot(s[:,k],q[:])
 				paircount += 1
 
 		# Populate small matrix to be inverted
@@ -85,14 +86,43 @@ class LSR1(InverseLBFGS):
 				k_ind += 1
 
 		if paircount > 0:
-			b = numpy.linalg.solve(minimat,a)
+			rng = paircount
+			b = numpy.linalg.solve(minimat[0:rng,0:rng],a[0:rng])
 
 		for i in range(paircount):
 			k = (self.insert - paircount + i) % self.npairs
-			if ys[k] is not None:
-				q += b[i]*y[:,k] - (b[i]/self.gamma)*s[:,k]
+			q += b[i]*y[:,k] - (b[i]/self.gamma)*s[:,k]
 
 		return q
 
 
 # end class
+
+# Subclass solver TRUNK to maintain an LSR1 approximation to the Hessian and
+# perform the LSR1 matrix update at the end of each iteration.
+# ** This solver is based on LDFPTrunkFramework, but with LSR1 instead of LDFP
+class LSR1TrunkFramework(TrunkFramework):
+
+    def __init__(self, nlp, TR, TrSolver, **kwargs):
+        TrunkFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
+        self.lsr1 = LSR1(self.nlp.n, **kwargs)
+        self.save_g = True
+
+    def hprod(self, v, **kwargs):
+        """
+        Compute the matrix-vector product between the limited-memory DFP
+        approximation kept in storage and the vector `v`.
+        """
+        return self.lsr1.matvec(v)
+
+    def PostIteration(self, **kwargs):
+        """
+        This method updates the limited-memory DFP approximation by appending
+        the most recent (s,y) pair to it and possibly discarding the oldest one
+        if all the memory has been used.
+        """
+        if self.step_status != 'Rej':
+            s = self.alpha * self.solver.step
+            y = self.g - self.g_old
+            self.lsr1.store(s, y)
+        return None
