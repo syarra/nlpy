@@ -13,7 +13,6 @@ a limited-memory BFGS approximation to its inverse.
 
 from nlpy.model.amplpy import AmplModel
 from nlpy.optimize.solvers.lbfgs import InverseLBFGS,LBFGS
-from nlpy.optimize.solvers.trunk import TrunkFramework
 import numpy as np
 
 __docformat__ = 'restructuredtext'
@@ -89,33 +88,4 @@ class StructuredLDFP(InverseLBFGS):
         matrix-vector product.
         """
         return InverseLBFGS.matvec(self, v)
-
-
-# Subclass solver TRUNK to maintain an LDFP approximation to the Hessian and
-# perform the LDFP matrix update at the end of each iteration.
-class LDFPTrunkFramework(TrunkFramework):
-
-    def __init__(self, nlp, TR, TrSolver, **kwargs):
-        TrunkFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
-        self.ldfp = LDFP(self.nlp.n, **kwargs)
-        self.save_g = True
-
-    def hprod(self, v, **kwargs):
-        """
-        Compute the matrix-vector product between the limited-memory DFP
-        approximation kept in storage and the vector `v`.
-        """
-        return self.ldfp.matvec(v)
-
-    def PostIteration(self, **kwargs):
-        """
-        This method updates the limited-memory DFP approximation by appending
-        the most recent (s,y) pair to it and possibly discarding the oldest one
-        if all the memory has been used.
-        """
-        if self.step_status != 'Rej':
-            s = self.alpha * self.solver.step
-            y = self.g - self.g_old
-            self.ldfp.store(s, y)
-        return None
 

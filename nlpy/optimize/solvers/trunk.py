@@ -6,7 +6,8 @@
  The Python version of the celebrated  F90/95 solver
  D. Orban                        Montreal Sept. 2003
 """
-from nlpy.optimize.solvers import lbfgs    # For preconditioning
+# from nlpy.optimize.solvers import lbfgs    # For preconditioning
+from nlpy.optimize.solvers.lbfgs import InverseLBFGS, LBFGS
 from nlpy.krylov.linop import SimpleLinearOperator
 from nlpy.tools import norms
 from nlpy.tools.timing import cputime
@@ -287,11 +288,17 @@ class TrunkFramework:
                           self.gnorm, cgiter, rho,
                           self.TR.Delta, pstatus))
 
+            # Direct print of progress
+            # print self.iter, self.f
+
             exitOptimal = self.gnorm <= stoptol
             exitIter    = self.iter > self.maxiter
             exitUser    = status == 'usr'
 
         self.tsolve = cputime() - t    # Solve time
+
+        # Direct print of progress
+        # print self.tsolve
 
         # Set final solver status.
         if status == 'usr':
@@ -315,7 +322,8 @@ class TrunkLbfgsFramework(TrunkFramework):
 
         TrunkFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
         self.npairs = kwargs.get('npairs', 5)
-        self.lbfgs = lbfgs.InverseLBFGS(nlp.n, npairs=self.npairs)
+        # self.lbfgs = lbfgs.InverseLBFGS(nlp.n, npairs=self.npairs)
+        self.lbfgs = InverseLBFGS(nlp.n, npairs=self.npairs)
         self.save_g = True
 
     def precon(self, v, **kwargs):
@@ -334,3 +342,36 @@ class TrunkLbfgsFramework(TrunkFramework):
         s = self.alpha * self.solver.step
         y = self.g - self.g_old
         self.lbfgs.store(s, y)
+
+
+class LQNTrunkFramework(TrunkFramework):
+    """
+    Class LQNTrunkFramework is a type of TrunkFramework that employs a limited-
+    memory quasi-Newton Hessian approximation instead of the exact Hessian 
+    specified in the NLP. The argument QNApprox defines the quasi-Newton
+    approximation used by the solver.
+    """
+
+    def __init__(self, nlp, TR, TrSolver, QNApprox=LBFGS, **kwargs):
+        TrunkFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
+        self.qn = QNApprox(self.nlp.n, **kwargs)
+        self.save_g = True
+
+    def hprod(self, v, **kwargs):
+        """
+        Compute the matrix-vector product between the limited-memory DFP
+        approximation kept in storage and the vector `v`.
+        """
+        return self.qn.matvec(v)
+
+    def PostIteration(self, **kwargs):
+        """
+        This method updates the limited-memory DFP approximation by appending
+        the most recent (s,y) pair to it and possibly discarding the oldest one
+        if all the memory has been used.
+        """
+        if self.step_status != 'Rej':
+            s = self.alpha * self.solver.step
+            y = self.g - self.g_old
+            self.qn.store(s, y)
+        return None

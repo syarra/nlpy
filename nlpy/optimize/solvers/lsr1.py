@@ -21,7 +21,6 @@ import numpy.linalg
 # Extension modules
 # =============================================================================
 from nlpy.optimize.solvers.lbfgs import InverseLBFGS
-from nlpy.optimize.solvers.trunk import TrunkFramework
 
 # =============================================================================
 # LSR1 Class
@@ -97,32 +96,3 @@ class LSR1(InverseLBFGS):
 
 
 # end class
-
-# Subclass solver TRUNK to maintain an LSR1 approximation to the Hessian and
-# perform the LSR1 matrix update at the end of each iteration.
-# ** This solver is based on LDFPTrunkFramework, but with LSR1 instead of LDFP
-class LSR1TrunkFramework(TrunkFramework):
-
-    def __init__(self, nlp, TR, TrSolver, **kwargs):
-        TrunkFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
-        self.lsr1 = LSR1(self.nlp.n, **kwargs)
-        self.save_g = True
-
-    def hprod(self, v, **kwargs):
-        """
-        Compute the matrix-vector product between the limited-memory DFP
-        approximation kept in storage and the vector `v`.
-        """
-        return self.lsr1.matvec(v)
-
-    def PostIteration(self, **kwargs):
-        """
-        This method updates the limited-memory DFP approximation by appending
-        the most recent (s,y) pair to it and possibly discarding the oldest one
-        if all the memory has been used.
-        """
-        if self.step_status != 'Rej':
-            s = self.alpha * self.solver.step
-            y = self.g - self.g_old
-            self.lsr1.store(s, y)
-        return None
