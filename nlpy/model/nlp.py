@@ -214,6 +214,7 @@ class NLPModel(object):
         self.ceval = 0    #                constraint functions
         self.Jeval = 0    #                           gradients
         self.Jprod = 0    #                matrix-vector products with Jacobian
+        self.JTprod = 0   #                             with transpose Jacobian
 
     def ResetCounters(self):
         """
@@ -227,6 +228,7 @@ class NLPModel(object):
         self.ceval = 0
         self.Jeval = 0
         self.Jprod = 0
+        self.JTprod = 0
         return None
 
     def get_stopping_tolerances(self):
@@ -285,6 +287,16 @@ class NLPModel(object):
 
     # Evaluate constraints Jacobian at x
     def jac(self, x, **kwargs):
+        raise NotImplementedError, 'This method must be subclassed.'
+
+    # Evaluate matrix-vector product between
+    # the Jacobian and a vector
+    def jprod(self, x, p, **kwargs):
+        raise NotImplementedError, 'This method must be subclassed.'
+
+    # Evaluate matrix-vector product between
+    # the transpose Jacobian and a vector
+    def jtprod(self, x, q, **kwargs):
         raise NotImplementedError, 'This method must be subclassed.'
 
     # Evaluate Lagrangian Hessian at (x,z)
