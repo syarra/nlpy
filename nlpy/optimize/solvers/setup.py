@@ -12,7 +12,9 @@ def configuration(parent_package='',top_path=None):
                         'nlpy_reglp.py',
                         'nlpy_regqp.py',
                         'nlpy_funnel.py',
-                        'nlpy_elastic.py'])
+                        'nlpy_elastic.py',
+                        'nlpy_sbmin.py',
+                        'nlpy_auglag.py'])
 
     config.make_config_py()
     return config

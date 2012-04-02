@@ -6,6 +6,8 @@ from nlpy.krylov.pcg  import TruncatedCG
 from nlpy.krylov.ppcg import ProjectedCG
 import numpy as np
 from math import sqrt
+import nlpy.tools.norms as norms
+from nlpy.optimize.solvers.bqp import BQP
 
 __docformat__ = 'restructuredtext'
 
@@ -214,6 +216,61 @@ class TrustRegionPCG(TrustRegionSolver):
         self.m = np.dot(self.g, self.step)
         self.m += 0.5 * np.dot(self.step, self.cgSolver.H * self.step)
         return
+
+
+class TrustRegionBQP(TrustRegionSolver):
+    """
+    Instantiate a trust-region subproblem solver based on a matrix-free
+    active-set method for bound-constrained quadratic program. The method
+    implemented is that of More and Toraldo described in
+
+    J. J. More and G. Toraldo, On the solution of large
+    quadratic programming problems with bound constraints,
+    SIAM Journal on Optimization, 1(1), pp. 93-113, 1991.
+
+    The trust-region subproblem has the form
+
+    minimize q(d)  subject to ||d||_oo <= radius,
+
+    where q(d) is a quadratic function of the n-vector d, i.e., q has the
+    general form q(d) = g' d + 1/2 d' H d,
+
+    where `g` is a n-vector typically interpreted as the gradient of some
+    merit function and `H` is a real symmetric n-by-n matrix. Note that `H`
+    need not be positive semi-definite.
+
+    The trust-region constraint `||d||_oo <= radius` has to be in infinity norm
+    only.
+
+    For more information on trust-region methods, see
+
+    A. R. Conn, N. I. M. Gould and Ph. L. Toint, Trust-Region Methods,
+    MP01 MPS-SIAM Series on Optimization, 2000.
+    """
+
+    def __init__(self, bqp, g, **kwargs):
+
+        TrustRegionSolver.__init__(self, g,  **kwargs)
+
+        self.bqpSolver = BQP(bqp, **kwargs)
+
+        self.niter = 0
+        self.stepNorm = 0.0
+        self.step = None
+        self.m = None # Model value at candidate solution
+
+    def Solve(self, **kwargs):
+        """
+        Solve trust-region subproblem using the active-set method of More and
+        Toraldo.
+        """
+        self.bqpSolver.solve(**kwargs)
+        self.niter = self.bqpSolver.niter
+        self.stepNorm = norms.norm2(self.bqpSolver.x)
+        self.step= self.bqpSolver.x
+        self.m = self.bqpSolver.qval
+        return
+
 
 
 # Define GLTR solver only if available

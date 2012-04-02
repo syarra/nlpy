@@ -179,7 +179,10 @@ class TruncatedCG:
                 sigma = self.to_boundary(s, p, radius, ss=snorm2)
 
             # Compute CG steplength.
-            alpha = ry/pHp
+            if pHp == 0.:
+                alpha = np.inf
+            else:
+                alpha = ry/pHp
 
             if pHp <= 0 and radius is None:
                 # p is direction of singularity or negative curvature.
