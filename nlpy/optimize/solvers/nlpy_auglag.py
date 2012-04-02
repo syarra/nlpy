@@ -49,7 +49,5 @@ numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 
 for ProblemName in sys.argv[1:]:
     nlp = amplpy.AmplModel(ProblemName)         # Create a model
-    print nlp.Uvar
-    print nlp.Lvar
     LANCELOT = pass_to_lancelot(nlp, showbanner=True)
     nlp.close()                                 # Close connection with model
