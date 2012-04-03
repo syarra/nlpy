@@ -218,8 +218,8 @@ class NLPModel(object):
 
     def ResetCounters(self):
         """
-        Reset the `feval`, `geval`, `Heval`, `Hprod`, `ceval`, `Jeval` and
-        `Jprod` counters of the current instance to zero.
+        Reset the `feval`, `geval`, `Heval`, `Hprod`, `ceval`, `Jeval`, 
+        `Jprod`, and `JTprod` counters of the current instance to zero.
         """
         self.feval = 0
         self.geval = 0
