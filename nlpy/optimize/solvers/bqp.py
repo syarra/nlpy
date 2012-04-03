@@ -15,7 +15,7 @@ implemented is that of More and Toraldo described in
 from nlpy.krylov.pcg   import TruncatedCG
 from nlpy.krylov.linop import SimpleLinearOperator
 from nlpy.krylov.linop import SymmetricallyReducedLinearOperator as ReducedHessian
-from nlpy.tools.utils import identical, where
+from nlpy.tools.utils import identical, where, NullHandler
 from nlpy.tools.exceptions import InfeasibleError, UserExitRequest
 import numpy as np
 import logging
@@ -102,7 +102,10 @@ class BQP(object):
 
         # Create a logger for solver.
         self.log = logging.getLogger('bqp.solver')
-        self.log.addHandler(logging.NullHandler())
+        try:
+            self.log.addHandler(logging.NullHandler()) # For Python 2.7.x
+        except:
+            self.log.addHandler(NullHandler()) # For Python 2.6.x (and older?)
 
 
     def check_feasible(self, x):

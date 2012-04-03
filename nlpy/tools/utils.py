@@ -1,7 +1,26 @@
 # Various utilities.
 
 import numpy as np
+import logging
 from math import copysign, sqrt
+
+class NullHandler(logging.Handler):
+    '''
+    A simple implementation of the null handler for Python 2.6.x (and older?)
+    Useful for compatibility with older versions of Python.
+    '''
+
+    def emit(self, record):
+        pass
+
+
+    def handle(self, record):
+        pass
+
+
+    def createLock(self):
+        return None
+
 
 # Helper functions.
 def identical(a,b):
