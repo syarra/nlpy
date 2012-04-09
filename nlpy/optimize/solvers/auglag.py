@@ -117,7 +117,7 @@ class AugmentedLagrangian(NLPModel):
         nsUR_ind = nsLR_ind + self.nsUR
 
         convals = self.nlp.cons(x[:nx])
-        convals[self.nlp.m:] = convals[self.nlp.rangeC]
+        #convals[self.nlp.m:] = convals[self.nlp.rangeC]
         convals[self.lowerC] -= x[nx:nsLL_ind] + self.Lcon[self.lowerC]
         convals[self.upperC] += x[nsLL_ind:nsUU_ind] - self.Ucon[self.upperC]
         convals[self.equalC] -= self.Lcon[self.equalC]
@@ -219,7 +219,7 @@ class AugmentedLagrangian(NLPModel):
             # Exact Hessian
             # Note: the code in this block has yet to be properly tested
             convals = self.get_infeas(x)
-            w[:nx] = nlp.hprod(x[:nx], pi,v[:nx],**kwargs)
+            w[:nx] = nlp.hprod(x[:nx],self.pi,v[:nx],**kwargs)
 
             for i in range(nlp.m):
                 w[:nx] += (self.pi[i] + self.rho*convals[i]) \
@@ -309,8 +309,8 @@ class AugmentedLagrangianFramework(object):
         self.dphi0 = None
         self.dphi0norm = None
         self.alprob.pi0 = self.pi0
-        self.alprob.rho = rho_init
-        self.alprob.rho_init = rho_init # Needed ?
+        self.alprob.rho = numpy.array(rho_init)
+        self.alprob.rho_init = numpy.array(rho_init) # Needed ?
         self.rho = self.alprob.rho
         self.pi = self.alprob.pi
         self.tau = tau
@@ -404,6 +404,8 @@ class AugmentedLagrangianFramework(object):
             SBMIN.Solve()
             self.x = SBMIN.x
             self.f = self.alprob.nlp.obj(self.x[:self.alprob.nx])
+
+            self.alprob.hrestart
             dphi = self.alprob.grad(self.x)
             Pdphi = self.alprob.project_gradient(self.x,dphi)
             Pmax_new = numpy.max(numpy.abs(Pdphi))
