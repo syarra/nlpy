@@ -12,6 +12,7 @@ from nlpy.tools.timing import cputime
 from nlpy.tools.exceptions import UserExitRequest
 import numpy
 import logging
+import pdb
 from math import sqrt
 from nlpy.model import NLPModel
 
@@ -134,7 +135,7 @@ class SBMINFramework:
 
         reltol = self.reltol
         step_status = None
-        exitIter = exitUser = False
+        exitIter = exitUser = exitTR = False
         exitOptimal = self.pgnorm <= reltol
         status = ''
 
@@ -149,7 +150,7 @@ class SBMINFramework:
                                              self.pgnorm, '', '',
                                              '', '')
 
-        while not (exitUser or exitOptimal or exitIter):
+        while not (exitUser or exitOptimal or exitIter or exitTR):
 
             self.iter += 1
 
@@ -220,15 +221,18 @@ class SBMINFramework:
 
             exitOptimal = self.pgnorm <= reltol
             exitIter    = self.iter > self.maxiter
+            exitTR      = self.TR.Delta <= 10.0 * self.TR.eps
             exitUser    = status == 'usr'
 
         self.tsolve = cputime() - t    # Solve time
 
         # Set final solver status.
-        if status == 'usr':
+        if exitUser:
             pass
-        elif self.pgnorm <= reltol:
+        elif exitOptimal:
             status = 'opt'
+        elif exitTR:
+            status = 'tr'
         else: # self.iter > self.maxiter:
             status = 'itr'
         self.status = status

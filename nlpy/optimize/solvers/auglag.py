@@ -369,6 +369,7 @@ class AugmentedLagrangianFramework(object):
             self.eta = self.eta_init
 
         self.iter = 0
+        self.inner_fail_count = 0
         self.pg0 = Pmax
 
 
@@ -438,8 +439,18 @@ class AugmentedLagrangianFramework(object):
                     break
                 # No change in rho, tighten tolerances
                 self.pi += self.rho*convals_new
-                self.eta /= self.rho**self.b_eta
-                self.omega /= self.rho**self.b_omega
+                if SBMIN.status == 'opt':
+                    # Safeguard: tighten tolerances only if desired optimality 
+                    # is reached to prevent rapid decay of tolerances
+                    self.eta /= self.rho**self.b_eta
+                    self.omega /= self.rho**self.b_omega
+                    self.inner_fail_count = 0
+                else:
+                    self.inner_fail_count += 1
+                    if self.inner_fail_count == 10:
+                        print '\n Current point could not be improved, exiting ... \n'
+                        break
+                # end if
                 if self.printlevel>=1:
                     print '\n******  Updating multipliers estimates  ******\n'
             else:
@@ -454,6 +465,13 @@ class AugmentedLagrangianFramework(object):
         # end while
 
         # Solution output, etc.
+        if converged:
+            print '\n Optimal solution found \n'
+
+        if self.printlevel>=1:
+            print 'f = ',self.f
+            print 'pi_max = ',max(self.pi)
+            print 'max infeas. = ',max_cons_new
 
     # end def
 
