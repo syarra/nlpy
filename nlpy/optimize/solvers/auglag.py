@@ -116,8 +116,8 @@ class AugmentedLagrangian(NLPModel):
         nsLR_ind = nsUU_ind + self.nsLR
         nsUR_ind = nsLR_ind + self.nsUR
 
-        if self.m == 0:
-            convals = numpy.zeros(self.m)
+        if self.nlp.m == 0:
+            convals = numpy.zeros(self.nlp.m)
         else:
             convals = self.nlp.cons(x[:nx])
             #convals[self.nlp.m:] = convals[self.nlp.rangeC]
@@ -172,7 +172,7 @@ class AugmentedLagrangian(NLPModel):
                 JE = PysparseLinearOperator(_JE, symmetric=False)
                 algrad[:nx] += JE.T * vec
             else:
-                if self.m != 0:
+                if self.nlp.m != 0:
                     algrad[:nx] += numpy.dot(nlp.jac(x[:nx]).transpose(),vec)
         # end if
 
