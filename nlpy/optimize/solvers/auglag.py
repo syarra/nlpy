@@ -85,8 +85,8 @@ class AugmentedLagrangian(NLPModel):
         self.approxHess = kwargs.get('approxHess',True)
         if self.approxHess:
             # LBFGS is currently the only option
-            self.Hessapp = LBFGS(self.n)
-            #self.Hessapp = LSR1(self.n)
+            self.Hessapp = LBFGS(self.n,**kwargs)
+            #self.Hessapp = LSR1(self.n,**kwargs)
 
         # Extend bound arrays to include slack variables
         self.Lvar = numpy.zeros(self.n,'d')
@@ -116,11 +116,16 @@ class AugmentedLagrangian(NLPModel):
         nsLR_ind = nsUU_ind + self.nsLR
         nsUR_ind = nsLR_ind + self.nsUR
 
-        convals = self.nlp.cons(x[:nx])
-        #convals[self.nlp.m:] = convals[self.nlp.rangeC]
-        convals[self.lowerC] -= x[nx:nsLL_ind] + self.Lcon[self.lowerC]
-        convals[self.upperC] += x[nsLL_ind:nsUU_ind] - self.Ucon[self.upperC]
-        convals[self.equalC] -= self.Lcon[self.equalC]
+        if self.m == 0:
+            convals = numpy.zeros(self.m)
+        else:
+            convals = self.nlp.cons(x[:nx])
+            #convals[self.nlp.m:] = convals[self.nlp.rangeC]
+            convals[self.lowerC] -= x[nx:nsLL_ind] + self.Lcon[self.lowerC]
+            convals[self.upperC] += x[nsLL_ind:nsUU_ind] - self.Ucon[self.upperC]
+            convals[self.equalC] -= self.Lcon[self.equalC]
+        # end if
+
         return convals
     # end def
 
@@ -167,7 +172,8 @@ class AugmentedLagrangian(NLPModel):
                 JE = PysparseLinearOperator(_JE, symmetric=False)
                 algrad[:nx] += JE.T * vec
             else:
-                algrad[:nx] += numpy.dot(nlp.jac(x[:nx]).transpose(),vec)
+                if self.m != 0:
+                    algrad[:nx] += numpy.dot(nlp.jac(x[:nx]).transpose(),vec)
         # end if
 
         algrad[nx:nsLL_ind] = -self.pi[nlp.lowerC] \
@@ -470,8 +476,9 @@ class AugmentedLagrangianFramework(object):
 
         if self.printlevel>=1:
             print 'f = ',self.f
-            print 'pi_max = ',max(self.pi)
-            print 'max infeas. = ',max_cons_new
+            if self.alprob.m != 0:
+                print 'pi_max = ',numpy.max(self.pi)
+                print 'max infeas. = ',max_cons_new
 
     # end def
 
