@@ -71,7 +71,6 @@ class SBMINFramework:
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
         self.magic_steps = kwargs.get('magic_steps',False)
-        self.slack_index = kwargs.get('slack_index',self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
         self.logger = kwargs.get('logger', None)
         self.total_bqpiter = 0
@@ -199,10 +198,11 @@ class SBMINFramework:
 
                 # (conservative) magical steps go here
                 if self.magic_steps == True:
+                    slack_index = kwargs.get('slack_index',self.nlp.n)
                     penalty_rho = kwargs.get('rho_pen',1.)
-                    m_step = -self.g[self.slack_index:] / penalty_rho
-                    self.x[self.slack_index:] += m_step
-                    self.x[self.slack_index:] = numpy.where(self.x[self.slack_index:] < 0., 0., self.x[self.slack_index:])
+                    m_step = -self.g[slack_index:] / penalty_rho
+                    self.x[slack_index:] += m_step
+                    self.x[slack_index:] = numpy.where(self.x[slack_index:] < 0., 0., self.x[slack_index:])
                 # end if
 
             else:

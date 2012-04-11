@@ -330,6 +330,7 @@ class AugmentedLagrangianFramework(object):
         self.b_eta = kwargs.get('b_eta',0.9)
         self.omega_opt = kwargs.get('omega_opt',1.e-9)
         self.eta_opt = kwargs.get('eta_opt',1.e-9)
+        self.magic_steps = kwargs.get('magic_steps',True)
 
         self.f0 = None
         self.f = +numpy.infty
@@ -402,17 +403,15 @@ class AugmentedLagrangianFramework(object):
                                             reltol=self.omega, x0=self.x,
                                             maxiter = 1000,
                                             verbose=self.sbmin_verbose,
-                                            magic_steps=True,
-                                            slack_index=self.alprob.nx)
+                                            magic_steps=self.magic_steps)
             else:
                 SBMIN = SBMINFramework(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
                                         maxiter = 1000,
                                         verbose=self.sbmin_verbose,
-                                        magic_steps=True,
-                                        slack_index=self.alprob.nx)
+                                        magic_steps=self.magic_steps)
 
-            SBMIN.Solve(rho_pen=self.rho)
+            SBMIN.Solve(rho_pen=self.rho,slack_index=self.alprob.nx)
             self.x = SBMIN.x
             self.f = self.alprob.nlp.obj(self.x[:self.alprob.nx])
 
