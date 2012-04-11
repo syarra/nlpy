@@ -229,7 +229,7 @@ class AugmentedLagrangian(NLPModel):
 
             for i in range(nlp.m):
                 w[:nx] += (self.pi[i] + self.rho*convals[i]) \
-                          * nlp.hiprod(x[:nx],i,v[:nx])
+                          * nlp.hiprod(i,x[:nx],v[:nx])
             # end for
             if isinstance(nlp, MFModel):
                 w[:nx] += self.rho*nlp.jtprod(x[:nx],nlp.jprod(x[:nx],v[:nx]))
@@ -447,7 +447,8 @@ class AugmentedLagrangianFramework(object):
                 self.pi += self.rho*convals_new
                 if SBMIN.status == 'opt':
                     # Safeguard: tighten tolerances only if desired optimality 
-                    # is reached to prevent rapid decay of tolerances
+                    # is reached to prevent rapid decay of tolerances from failed
+                    # inner loops
                     self.eta /= self.rho**self.b_eta
                     self.omega /= self.rho**self.b_omega
                     self.inner_fail_count = 0
@@ -467,6 +468,13 @@ class AugmentedLagrangianFramework(object):
                 if self.printlevel>=1:
                     print '\n******  Keeping current multipliers estimates  ******\n'
             # end if
+
+            # Safeguard: tightest tolerance should be near optimality to prevent excessive
+            # inner loop iterations at the end of the algorithm
+            if self.omega < self.omega_opt:
+                self.omega = self.omega_opt
+            if self.eta < self.eta_opt:
+                self.eta = self.eta_opt
 
         # end while
 
