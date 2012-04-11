@@ -70,6 +70,8 @@ class SBMINFramework:
 
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
+        self.magic_steps = kwargs.get('magic_steps',False)
+        self.slack_index = kwargs.get('slack_index',self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
         self.logger = kwargs.get('logger', None)
         self.total_bqpiter = 0
@@ -194,6 +196,14 @@ class SBMINFramework:
                                         self.projected_gradient(self.x,self.g)))
 
                 step_status = 'Acc'
+
+                # (conservative) magical steps go here
+                if self.magic_steps == True:
+                    penalty_rho = kwargs.get('rho_pen',1.)
+                    m_step = -self.g[self.slack_index:] / penalty_rho
+                    self.x[self.slack_index:] += m_step
+                    self.x[self.slack_index:] = numpy.where(self.x[self.slack_index:] < 0., 0., self.x[self.slack_index:])
+                # end if
 
             else:
                 # Trust-region step is unsuccessfull.

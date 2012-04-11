@@ -401,14 +401,18 @@ class AugmentedLagrangianFramework(object):
                 SBMIN = SBMINLbfgsFramework(self.alprob, tr, TRSolver,
                                             reltol=self.omega, x0=self.x,
                                             maxiter = 1000,
-                                            verbose=self.sbmin_verbose)
+                                            verbose=self.sbmin_verbose,
+                                            magic_steps=True,
+                                            slack_index=self.alprob.nx)
             else:
                 SBMIN = SBMINFramework(self.alprob, tr, TRSolver,
-                                       reltol=self.omega, x0=self.x,
-                                       maxiter = 1000,
-                                       verbose=self.sbmin_verbose)
+                                        reltol=self.omega, x0=self.x,
+                                        maxiter = 1000,
+                                        verbose=self.sbmin_verbose,
+                                        magic_steps=True,
+                                        slack_index=self.alprob.nx)
 
-            SBMIN.Solve()
+            SBMIN.Solve(rho_pen=self.rho)
             self.x = SBMIN.x
             self.f = self.alprob.nlp.obj(self.x[:self.alprob.nx])
 
