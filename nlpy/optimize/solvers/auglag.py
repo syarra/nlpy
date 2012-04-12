@@ -75,9 +75,6 @@ class AugmentedLagrangian(NLPModel):
         self.x0 = numpy.zeros(self.n,'d')
         self.x0[:self.nx] = nlp.x0
 
-        # self.pi0 = nlp.pi0.copy()
-        # self.pi = self.pi0
-
         # Need 2 multipliers for each range constraint identified
         self.pi0 = numpy.zeros(nlp.m + nlp.nrangeC,'d')
         self.pi0[:nlp.m] = nlp.pi0
@@ -169,8 +166,6 @@ class AugmentedLagrangian(NLPModel):
         algrad = numpy.zeros(self.n,'d')
         algrad[:nx] = nlp.grad(x[:nx])
 
-        # pdb.set_trace()
-
         infeas = self.get_infeas(x)
         infeas_bar = infeas[:m].copy()
         infeas_bar[nlp.rangeC] += infeas[m:]
@@ -187,7 +182,8 @@ class AugmentedLagrangian(NLPModel):
                 algrad[:nx] += JE.T * vec
             else:
                 if m != 0:
-                    algrad[:nx] += numpy.dot(nlp.jac(x[:nx]).transpose(),vec)
+                    J = nlp.jac(x[:nx])
+                    algrad[:nx] += numpy.dot(J.T,vec)
         # end if
 
         algrad[nx:nsLL_ind] = -self.pi[nlp.lowerC] \
