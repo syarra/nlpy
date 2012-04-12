@@ -55,9 +55,9 @@ class AugmentedLagrangian(NLPModel):
 
         # Temporary error message as the class does not yet support
         # range constraints
-        if nlp.nrangeC > 0:
-            msg = 'Range inequality constraints are not supported.'
-            raise ValueError, msg
+        # if nlp.nrangeC > 0:
+        #     msg = 'Range inequality constraints are not supported.'
+        #     raise ValueError, msg
 
         # Analyze NLP to add slack variables to the formulation
         # Ordering of the slacks in 'x' is assumed to be the order shown here
@@ -75,7 +75,13 @@ class AugmentedLagrangian(NLPModel):
         self.x0 = numpy.zeros(self.n,'d')
         self.x0[:self.nx] = nlp.x0
 
-        self.pi0 = nlp.pi0.copy()
+        # self.pi0 = nlp.pi0.copy()
+        # self.pi = self.pi0
+
+        # Need 2 multipliers for each range constraint identified
+        self.pi0 = numpy.zeros(nlp.m + nlp.nrangeC,'d')
+        self.pi0[:nlp.m] = nlp.pi0
+        self.pi0[nlp.m:] = nlp.pi0[nlp.rangeC]
         self.pi = self.pi0
 
         self.rho_init = None
@@ -101,6 +107,7 @@ class AugmentedLagrangian(NLPModel):
         self.lowerC = nlp.lowerC
         self.upperC = nlp.upperC
         self.equalC = nlp.equalC
+        self.rangeC = nlp.rangeC
 
         # Needed for AMPL model
         #self.stop_d = nlp.stop_d
@@ -115,35 +122,35 @@ class AugmentedLagrangian(NLPModel):
         nsUU_ind = nsLL_ind + self.nsUU
         nsLR_ind = nsUU_ind + self.nsLR
         nsUR_ind = nsLR_ind + self.nsUR
+        m = self.nlp.m
 
-        if self.nlp.m == 0:
-            convals = numpy.zeros(self.nlp.m)
-        else:
+        # Infeasibility w.r.t. range lower bounds in the indices self.rangeC
+        #                            upper bounds at the end of the array
+        infeas = numpy.zeros(m + self.nlp.nrangeC)
+
+        if m != 0:
             convals = self.nlp.cons(x[:nx])
-            #convals[self.nlp.m:] = convals[self.nlp.rangeC]
-            convals[self.lowerC] -= x[nx:nsLL_ind] + self.Lcon[self.lowerC]
-            convals[self.upperC] += x[nsLL_ind:nsUU_ind] - self.Ucon[self.upperC]
-            convals[self.equalC] -= self.Lcon[self.equalC]
+            infeas[self.lowerC] = convals[self.lowerC] - x[nx:nsLL_ind] - self.Lcon[self.lowerC]
+            infeas[self.upperC] = convals[self.upperC] + x[nsLL_ind:nsUU_ind] - self.Ucon[self.upperC]
+            infeas[self.equalC] = convals[self.equalC] - self.Lcon[self.equalC]
+            infeas[self.rangeC] = convals[self.rangeC] - x[nsUU_ind:nsLR_ind] - self.Lcon[self.rangeC]
+            infeas[m:] = convals[self.rangeC] + x[nsLR_ind:nsUR_ind] - self.Ucon[self.rangeC]
         # end if
 
-        return convals
+        return infeas
     # end def
 
 
     # Evaluate augmented Lagrangian function
     def obj(self, x, **kwargs):
         nx = self.nx
-        nsLL_ind = nx + self.nsLL
-        nsUU_ind = nsLL_ind + self.nsUU
-        # nsLR_ind = nsUU_ind + self.nsLR
-        # nsUR_ind = nsLR_ind + self.nsUR
 
         alfunc = self.nlp.obj(x[:nx])
 
-        convals = self.get_infeas(x)
+        infeas = self.get_infeas(x)
 
-        alfunc += numpy.dot(self.pi,convals)
-        alfunc += 0.5*self.rho*numpy.sum(convals**2)
+        alfunc += numpy.dot(self.pi,infeas)
+        alfunc += 0.5*self.rho*numpy.sum(infeas**2)
 
         return alfunc
     # end def
@@ -152,18 +159,25 @@ class AugmentedLagrangian(NLPModel):
     # Evaluate augmented Lagrangian gradient
     def grad(self, x, **kwargs):
         nlp = self.nlp
+        m = nlp.m
         nx = self.nx
         nsLL_ind = nx + self.nsLL
         nsUU_ind = nsLL_ind + self.nsUU
-        # nsLR_ind = nsUU_ind + self.nsLR
-        # nsUR_ind = nsLR_ind + self.nsUR
+        nsLR_ind = nsUU_ind + self.nsLR
+        nsUR_ind = nsLR_ind + self.nsUR
 
         algrad = numpy.zeros(self.n,'d')
         algrad[:nx] = nlp.grad(x[:nx])
 
-        convals = self.get_infeas(x)
+        # pdb.set_trace()
 
-        vec = self.pi + self.rho*convals
+        infeas = self.get_infeas(x)
+        infeas_bar = infeas[:m].copy()
+        infeas_bar[nlp.rangeC] += infeas[m:]
+        pi_bar = self.pi[:m].copy()
+        pi_bar[nlp.rangeC] += self.pi[m:]
+
+        vec = pi_bar + self.rho*infeas_bar
         if isinstance(nlp, MFModel):
             algrad[:nx] += nlp.jtprod(x[:nx],vec)
         else:
@@ -172,15 +186,17 @@ class AugmentedLagrangian(NLPModel):
                 JE = PysparseLinearOperator(_JE, symmetric=False)
                 algrad[:nx] += JE.T * vec
             else:
-                if self.nlp.m != 0:
+                if m != 0:
                     algrad[:nx] += numpy.dot(nlp.jac(x[:nx]).transpose(),vec)
         # end if
 
         algrad[nx:nsLL_ind] = -self.pi[nlp.lowerC] \
-                              - self.rho*convals[nlp.lowerC]
+                              - self.rho*infeas[nlp.lowerC]
         algrad[nsLL_ind:nsUU_ind] = self.pi[nlp.upperC] \
-                                    + self.rho*convals[nlp.upperC]
-        # **Range constraint slacks here**
+                                    + self.rho*infeas[nlp.upperC]
+        algrad[nsUU_ind:nsLR_ind] = -self.pi[nlp.rangeC] \
+                                    - self.rho*infeas[nlp.rangeC]
+        algrad[nsLR_ind:nsUR_ind] = self.pi[m:] + self.rho*infeas[m:]
 
         return algrad
     # end def
@@ -208,63 +224,95 @@ class AugmentedLagrangian(NLPModel):
         '''
 
         nlp = self.nlp
+        m = nlp.m
         w = numpy.zeros(self.n,'d')
         nx = self.nx
         nsLL_ind = nx + self.nsLL
         nsUU_ind = nsLL_ind + self.nsUU
-        # nsLR_ind = nsUU_ind + self.nsLR
-        # nsUR_ind = nsLR_ind + self.nsUR
+        nsLR_ind = nsUU_ind + self.nsLR
+        nsUR_ind = nsLR_ind + self.nsUR
 
-
-        # Non-slack variables
         if self.approxHess:
             # Approximate Hessian
             w = self.Hessapp.matvec(v)
 
         else:
             # Exact Hessian
-            # Note: the code in this block has yet to be properly tested
-            convals = self.get_infeas(x)
-            w[:nx] = nlp.hprod(x[:nx],self.pi,v[:nx],**kwargs)
+            # Non-slack variables
+            infeas = self.get_infeas(x)
+            infeas_bar = infeas[:m]
+            infeas_bar[nlp.rangeC] += infeas[m:]
+            pi_bar = self.pi[:m]
+            pi_bar[nlp.rangeC] += self.pi[m:]
 
-            for i in range(nlp.m):
-                w[:nx] += (self.pi[i] + self.rho*convals[i]) \
+            w[:nx] = nlp.hprod(x[:nx],pi_bar,v[:nx],**kwargs)
+
+            for i in range(m):
+                w[:nx] += (self.rho*infeas_bar[i]) \
                           * nlp.hiprod(i,x[:nx],v[:nx])
             # end for
+
+            # Coupling between slacks and non-slacks
             if isinstance(nlp, MFModel):
-                w[:nx] += self.rho*nlp.jtprod(x[:nx],nlp.jprod(x[:nx],v[:nx]))
-                w[:nx] += self.rho*nlp.jprod(x[:nx],v[:nx])
-                w[nx:] += self.rho*nlp.jtprod(x[:nx],v[nx:])
+                _v0 = self.rho*nlp.jprod(x[:nx],v[:nx])
+                _v0[nlp.rangeC] *= 2.
+                w[:nx] += nlp.jtprod(x[:nx],_v0)
+
+                _v0[nlp.rangeC] /= 2.
+                w[nx:nsLL_ind] -= _v0[nlp.lowerC]
+                w[nsLL_ind:nsUU_ind] += _v0[nlp.upperC]
+                w[nsUU_ind:nsLR_ind] -= _v0[nlp.rangeC]
+                w[nsLR_ind:nsUR_ind] += _v0[nlp.rangeC]
+
+                _v1 = numpy.zeros(m,'d')
+                _v2 = numpy.zeros(m,'d')
+                _v1[nlp.lowerC] = -self.rho*v[nx:nsLL_ind]
+                _v1[nlp.upperC] = self.rho*v[nsLL_ind:nsUU_ind]
+                _v1[nlp.rangeC] = -self.rho*v[nsUU_ind:nsLR_ind]
+                _v2[nlp.rangeC] = self.rho*v[nsLR_ind:nsUR_ind]
+                w[:nx] += nlp.jtprod(x[:nx],_v1) + nlp.jtprod(x[:nx],_v2)
             else:
                 if isinstance(nlp, AmplModel):
                     _JE = nlp.jac(x[:nx])
                     JE = PysparseLinearOperator(_JE, symmetric=False)
                     w[:nx] += self.rho * (JE.T *(JE * v[:nx]))
 
-                    _J = nlp.jac(x[:nx])[nlp.lowerC,:]
+                    _J = _JE[nlp.lowerC,:]
                     J = PysparseLinearOperator(_J, symmetric=False)
                     w[:nx] -= self.rho * (J.T * v[nx:nsLL_ind])
                     w[nx:nsLL_ind] -= self.rho * (J * v[:nx])
 
-                    _J = nlp.jac(x[:nx])[nlp.lowerC,:]
+                    _J = _JE[nlp.upperC,:]
                     J = PysparseLinearOperator(_J, symmetric=False)
                     w[:nx] += self.rho * (J.T * v[nsLL_ind:nsUU_ind])
                     w[nsLL_ind:nsUU_ind] += self.rho * (J * v[:nx])
 
+                    _J = _JE[nlp.rangeC,:]
+                    J = PysparseLinearOperator(_J, symmetric=False)
+                    w[:nx] -= self.rho * (J.T * v[nsUU_ind:nsLR_ind])
+                    w[nsUU_ind:nsLR_ind] -= self.rho * (J * v[:nx])
+                    w[:nx] += self.rho * (J.T * v[nsLR_ind:nsUR_ind])
+                    w[nsLR_ind:nsUR_ind] += self.rho * (J * v[:nx])
+
                 else:
                     J = nlp.jac(x[:nx])
                     w[:nx] += self.rho*numpy.dot(J.T,numpy.dot(J,v[:nx]))
-                    w[:nx] -= self.rho*numpy.dot(J[nlp.lowerC].T,v[nx:nsLL_ind])
-                    w[:nx] += self.rho*numpy.dot(J[nlp.upperC].T,v[nsLL_ind:nsUU_ind])
+                    w[:nx] -= self.rho*numpy.dot(J[nlp.lowerC,:].T,v[nx:nsLL_ind])
+                    w[:nx] += self.rho*numpy.dot(J[nlp.upperC,:].T,v[nsLL_ind:nsUU_ind])
+                    w[:nx] -= self.rho*numpy.dot(J[nlp.rangeC,:].T,v[nsUU_ind:nsLR_ind])
+                    w[:nx] += self.rho*numpy.dot(J[nlp.rangeC,:].T,v[nsLR_ind:nsUR_ind])
                     w[nx:nsLL_ind] -= self.rho * \
-                                      numpy.dot(J[nlp.lowerC],v[:nx])
+                                      numpy.dot(J[nlp.lowerC,:],v[:nx])
                     w[nsLL_ind:nsUU_ind] += self.rho * \
-                                            numpy.dot(J[nlp.upperC],v[:nx])
+                                            numpy.dot(J[nlp.upperC,:],v[:nx])
+                    w[nsUU_ind:nsLR_ind] -= self.rho * \
+                                      numpy.dot(J[nlp.rangeC,:],v[:nx])
+                    w[nsLR_ind:nsUR_ind] += self.rho * \
+                                            numpy.dot(J[nlp.rangeC,:],v[:nx])
                 #end if
             # end if
             # Slack variables
-            w[nx:nsLL_ind] -= self.rho*v[nx:nsLL_ind]
-            w[nsLL_ind:nsUU_ind] += self.rho*v[nsLL_ind:nsUU_ind]
+            w[nx:] += self.rho*v[nx:]
         # end if
 
         return w
@@ -446,7 +494,7 @@ class AugmentedLagrangianFramework(object):
                 if max_cons_new <= self.eta_opt and Pmax_new <= self.omega_opt:
                     converged = True
                     break
-                # No change in rho, tighten tolerances
+                # No change in rho, update multipliers, tighten tolerances
                 self.pi += self.rho*convals_new
                 if SBMIN.status == 'opt':
                     # Safeguard: tighten tolerances only if desired optimality 
@@ -487,7 +535,7 @@ class AugmentedLagrangianFramework(object):
 
         if self.printlevel>=1:
             print 'f = ',self.f
-            if self.alprob.m != 0:
+            if self.alprob.nlp.m != 0:
                 print 'pi_max = ',numpy.max(self.pi)
                 print 'max infeas. = ',max_cons_new
 
