@@ -445,22 +445,24 @@ class AugmentedLagrangianFramework(object):
             if self.alprob.approxHess==True:
                 SBMIN = SBMINLbfgsFramework(self.alprob, tr, TRSolver,
                                             reltol=self.omega, x0=self.x,
-                                            maxiter = 1000,
+                                            f0=phi, g0=dphi, maxiter = 1000,
                                             verbose=self.sbmin_verbose,
                                             magic_steps=self.magic_steps)
             else:
                 SBMIN = SBMINFramework(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
-                                        maxiter = 1000,
+                                        f0=phi, g0=dphi, maxiter = 1000,
                                         verbose=self.sbmin_verbose,
                                         magic_steps=self.magic_steps)
 
             SBMIN.Solve(rho_pen=self.rho,slack_index=self.alprob.nx)
+
+            # Retrieve solution from SBMIN
             self.x = SBMIN.x
-            self.f = self.alprob.nlp.obj(self.x[:self.alprob.nx])
+            phi = SBMIN.f
+            dphi = SBMIN.g
 
             self.alprob.hrestart
-            dphi = self.alprob.grad(self.x)
             Pdphi = self.alprob.project_gradient(self.x,dphi)
             Pmax_new = numpy.max(numpy.abs(Pdphi))
             convals_new = self.alprob.get_infeas(self.x)
@@ -506,14 +508,14 @@ class AugmentedLagrangianFramework(object):
                         break
                 # end if
                 if self.printlevel>=1:
-                    print '\n******  Updating multipliers estimates  ******\n'
+                    print '\n******  Updating multiplier estimates  ******\n'
             else:
                 # Increase rho, reset tolerances based on new rho
                 self.rho /= self.tau
                 self.eta = self.eta_init*self.rho**-self.a_eta
                 self.omega = self.omega_init*self.rho**-self.a_omega
                 if self.printlevel>=1:
-                    print '\n******  Keeping current multipliers estimates  ******\n'
+                    print '\n******  Keeping current multiplier estimates  ******\n'
             # end if
 
             # Safeguard: tightest tolerance should be near optimality to prevent excessive
@@ -522,6 +524,10 @@ class AugmentedLagrangianFramework(object):
                 self.omega = self.omega_opt
             if self.eta < self.eta_opt:
                 self.eta = self.eta_opt
+
+            # Update function and gradient calls for next iteration
+            phi = self.alprob.obj(self.x)
+            dphi = self.alprob.grad(self.x)
 
         # end while
 

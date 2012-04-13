@@ -60,9 +60,9 @@ class SBMINFramework:
         self.iter   = 0         # Iteration counter
         self.x      = kwargs.get('x0', self.nlp.x0.copy())
         self.f      = None
-        self.f0     = None
+        self.f0     = kwargs.get('f0', self.nlp.obj(self.x))
         self.g      = None
-        self.g_old  = None
+        self.g_old  = kwargs.get('g0', self.nlp.grad(self.x))
         self.save_g = False              # For methods that need g_{k-1} and g_k
         self.gnorm  = None
         self.g0     = None
@@ -121,10 +121,8 @@ class SBMINFramework:
         nlp = self.nlp
 
         # Gather initial information.
-        self.f      = self.nlp.obj(self.x)
-        self.f0     = self.f
-        self.g      = self.nlp.grad(self.x)  # Current  gradient
-        self.g_old  = self.g                 # Previous gradient
+        self.f        = self.f0
+        self.g        = self.g_old
         self.pgnorm = numpy.max(numpy.abs( \
                                 self.projected_gradient(self.x,self.g)))
         self.pg0 = self.pgnorm
@@ -163,7 +161,7 @@ class SBMINFramework:
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
 
-            qp = TrustBQPModel(self.nlp, self.x, self.TR.Delta)
+            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, g_k=self.g)
 
             self.solver = self.TrSolver(qp, qp.obj)
             self.solver.Solve(reltol=reltol)
@@ -299,7 +297,7 @@ class TrustBQPModel(NLPModel):
         self.x0 = numpy.zeros(self.nlp.n)
         self.x_k = x_k
         self.delta = delta
-        self.g_k = self.nlp.grad(self.x_k)
+        self.g_k = kwargs.get('g_k',self.nlp.grad(self.x_k))
 
         # Saved values (private).
         self._last_x = numpy.infty * numpy.ones(self.nlp.n)
@@ -345,12 +343,21 @@ class TrustBQPModel(NLPModel):
             return self._last_grad_obj
 
         g = self.g_k.copy()
-        g += self.nlp.hprod(self.x_k, self.nlp.pi0, x)
+        g += self.nlp.hprod(self.x_k, None, x)
+
+        # Alternative code for consistency with obj() method
+        # if self._last_Hx is not None and (self._last_x == x).all():
+        #     Hx = self._last_Hx.copy()
+        # else:
+        #     Hx = self.nlp.hprod(self.x_k, None, x)
+        #     self._last_Hx = Hx.copy()
+
+        # g += Hx
 
         if not (self._last_x == x).all():
             self._last_x = x.copy()
             self._last_obj = None  # Objective function out of date
-            self._last_Hx = None   # Hessian out of date
+            self._last_Hx = None   # Hessian product out of date
 
         self._last_grad_obj = g
         return g
