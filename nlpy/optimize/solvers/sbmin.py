@@ -187,12 +187,6 @@ class SBMINFramework:
                 # Trust-region step is succesfull.
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
-                self.f = f_trial
-                self.g = nlp.grad(self.x)
-                self.pgnorm = numpy.max(numpy.abs( \
-                                        self.projected_gradient(self.x,self.g)))
-
-                step_status = 'Acc'
 
                 # (conservative) magical steps go here
                 if self.magic_steps == True:
@@ -202,6 +196,13 @@ class SBMINFramework:
                     self.x[slack_index:] += m_step
                     self.x[slack_index:] = numpy.where(self.x[slack_index:] < 0., 0., self.x[slack_index:])
                 # end if
+
+                self.f = nlp.obj(self.x)
+                self.g = nlp.grad(self.x)
+                self.pgnorm = numpy.max(numpy.abs( \
+                                        self.projected_gradient(self.x,self.g)))
+
+                step_status = 'Acc'
 
             else:
                 # Trust-region step is unsuccessfull.

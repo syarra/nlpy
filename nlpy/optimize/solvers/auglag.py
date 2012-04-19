@@ -109,11 +109,22 @@ class AugmentedLagrangian(NLPModel):
         # Needed for AMPL model
         #self.stop_d = nlp.stop_d
 
+        # Saved values (private).
+        self._last_x = numpy.infty * numpy.ones(self.n)
+        self._last_obj = None
+        self._last_infeas = None
+        self._last_grad = None
+        self._last_Hx = None
+
+
     # end def
 
 
     # Evaluate infeasibility measure (used in both objective and gradient)
     def get_infeas(self, x, **kwargs):
+        if self._last_infeas is not None and (self._last_x == x).all():
+            return self._last_infeas
+
         nx = self.nx
         nsLL_ind = nx + self.nsLL
         nsUU_ind = nsLL_ind + self.nsUU
@@ -134,12 +145,23 @@ class AugmentedLagrangian(NLPModel):
             infeas[m:] = convals[self.rangeC] + x[nsLR_ind:nsUR_ind] - self.Ucon[self.rangeC]
         # end if
 
+        if not (self._last_x == x).all():
+            self._last_x = x.copy()
+            self._last_obj = None   # Objective out of date
+            self._last_grad = None  # Gradient out of date
+            if not self.approxHess:
+                self._last_Hx = None    # Hessian product out of date
+
+        self._last_infeas = infeas
         return infeas
     # end def
 
 
     # Evaluate augmented Lagrangian function
     def obj(self, x, **kwargs):
+        if self._last_obj is not None and (self._last_x == x).all():
+            return self._last_obj
+
         nx = self.nx
 
         alfunc = self.nlp.obj(x[:nx])
@@ -149,12 +171,16 @@ class AugmentedLagrangian(NLPModel):
         alfunc += numpy.dot(self.pi,infeas)
         alfunc += 0.5*self.rho*numpy.sum(infeas**2)
 
+        self._last_obj = alfunc
         return alfunc
     # end def
 
 
     # Evaluate augmented Lagrangian gradient
     def grad(self, x, **kwargs):
+        if self._last_grad is not None and (self._last_x == x).all():
+            return self._last_grad
+
         nlp = self.nlp
         m = nlp.m
         nx = self.nx
@@ -194,6 +220,7 @@ class AugmentedLagrangian(NLPModel):
                                     - self.rho*infeas[nlp.rangeC]
         algrad[nsLR_ind:nsUR_ind] = self.pi[m:] + self.rho*infeas[m:]
 
+        self._last_grad = algrad
         return algrad
     # end def
 
@@ -218,6 +245,9 @@ class AugmentedLagrangian(NLPModel):
         Lagrangian with arbitrary vector v. Both exact and approximate
         Hessians are supported.
         '''
+
+        if self._last_Hx is not None and (self._last_x == x).all() and not self.approxHess:
+            return self._last_Hx
 
         nlp = self.nlp
         m = nlp.m
@@ -309,6 +339,7 @@ class AugmentedLagrangian(NLPModel):
             # end if
             # Slack variables
             w[nx:] += self.rho*v[nx:]
+            self._last_Hx = w
         # end if
 
         return w
