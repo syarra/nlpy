@@ -60,11 +60,11 @@ class SBMINFramework:
         self.iter   = 0         # Iteration counter
         self.x      = kwargs.get('x0', self.nlp.x0.copy())
         self.f      = None
-        self.f0     = kwargs.get('f0', self.nlp.obj(self.x))
+        self.f0     = None
         self.g      = None
-        self.g_old  = kwargs.get('g0', self.nlp.grad(self.x))
+        self.g_old  = None
         self.save_g = False              # For methods that need g_{k-1} and g_k
-        self.gnorm  = None
+        self.pgnorm  = None
         self.g0     = None
         self.tsolve = 0.0
 
@@ -76,7 +76,7 @@ class SBMINFramework:
         self.total_bqpiter = 0
 
         self.hformat = '%-5s  %8s  %7s  %5s  %8s  %8s  %4s'
-        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','cg','rho','Radius','Stat')
+        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','bqp','rho','Radius','Stat')
         self.hlen   = len(self.header)
         self.hline  = '     '+'-' * self.hlen
         self.format = '     %-5d  %8.2e  %7.1e  %5d  %8.1e  %8.1e  %4s'
@@ -121,14 +121,16 @@ class SBMINFramework:
         nlp = self.nlp
 
         # Gather initial information.
-        self.f        = self.f0
-        self.g        = self.g_old
+        self.f      = self.nlp.obj(self.x)
+        self.f0     = self.f
+        self.g      = self.nlp.grad(self.x)  # Current  gradient
+        self.g_old  = self.g                 # Previous gradient
         self.pgnorm = numpy.max(numpy.abs( \
                                 self.projected_gradient(self.x,self.g)))
         self.pg0 = self.pgnorm
 
         # Reset initial trust-region radius.
-        self.TR.Delta = .2#0.1 * norms.norm2(self.g)
+        self.TR.Delta = 0.1 * self.pgnorm#norms.norm2(self.g) #2.
 
         self.radii = [ self.TR.Delta ]
 
@@ -161,10 +163,14 @@ class SBMINFramework:
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
 
-            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, g_k=self.g)
+            qp = TrustBQPModel(self.nlp, self.x, self.TR.Delta)
 
-            self.solver = self.TrSolver(qp, qp.obj)
-            self.solver.Solve(reltol=reltol)
+            #print 'QP Lvar :', qp.Lvar
+            #print 'QP Uvar :', qp.Uvar
+
+
+            self.solver = self.TrSolver(qp, qp.grad)
+            self.solver.Solve()
 
             step = self.solver.step
             stepnorm = self.solver.stepNorm
@@ -187,6 +193,12 @@ class SBMINFramework:
                 # Trust-region step is succesfull.
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
+                self.f = f_trial
+                self.g = nlp.grad(self.x)
+                self.pgnorm = numpy.max(numpy.abs( \
+                                        self.projected_gradient(self.x,self.g)))
+
+                step_status = 'Acc'
 
                 # (conservative) magical steps go here
                 if self.magic_steps == True:
@@ -196,13 +208,6 @@ class SBMINFramework:
                     self.x[slack_index:] += m_step
                     self.x[slack_index:] = numpy.where(self.x[slack_index:] < 0., 0., self.x[slack_index:])
                 # end if
-
-                self.f = nlp.obj(self.x)
-                self.g = nlp.grad(self.x)
-                self.pgnorm = numpy.max(numpy.abs( \
-                                        self.projected_gradient(self.x,self.g)))
-
-                step_status = 'Acc'
 
             else:
                 # Trust-region step is unsuccessfull.
@@ -298,13 +303,8 @@ class TrustBQPModel(NLPModel):
         self.x0 = numpy.zeros(self.nlp.n)
         self.x_k = x_k
         self.delta = delta
-        self.g_k = kwargs.get('g_k',self.nlp.grad(self.x_k))
+        self.g_k = self.nlp.grad(self.x_k)
 
-        # Saved values (private).
-        self._last_x = numpy.infty * numpy.ones(self.nlp.n)
-        self._last_obj = None
-        self._last_grad_obj = None
-        self._last_Hx = None
 
 
     def obj(self, x, **kwargs):
@@ -318,60 +318,50 @@ class TrustBQPModel(NLPModel):
         and `H` is  the Hessian of the Augmented Lagrangian evaluated at x_k.
 
         """
-        if self._last_obj is not None and (self._last_x == x).all():
-            return self._last_obj
+#        if self._last_obj is not None and (self._last_x == x).all():
+#            return self._last_obj
 
-        if self._last_Hx is not None and (self._last_x == x).all():
-            Hx = self._last_Hx.copy()
-        else:
-            Hx = self.nlp.hprod(self.x_k, None, x)
-            self._last_Hx = Hx.copy()
+#        if self._last_Hx is not None and (self._last_x == x).all():
+#            Hx = self._last_Hx.copy()
+#        else:
+        Hx = self.nlp.hprod(self.x_k,None,x)
+#            self._last_Hx = Hx.copy()
 
         qapprox = numpy.dot(self.g_k.copy(), x)
         qapprox += .5 * numpy.dot(x, Hx)
 
-        if not (self._last_x == x).all():
-            self._last_x = x.copy()
-            self._last_grad_obj = None  # Gradient out of date
+#        if not (self._last_x == x).all():
+#            self._last_x = x.copy()
+#            self._last_grad_obj = None  # Gradient out of date
 
-        self._last_obj = qapprox
+#        self._last_obj = qapprox
         return qapprox
 
     def grad(self, x, **kwargs):
         """
         """
-        if self._last_grad_obj is not None and (self._last_x == x).all():
-            return self._last_grad_obj
+#        if self._last_grad_obj is not None and (self._last_x == x).all():
+#            return self._last_grad_obj
 
-        g = self.g_k.copy()
-        g += self.nlp.hprod(self.x_k, None, x)
+        g = self.g_k.copy() + self.nlp.hprod(self.x_k,None,x)
 
-        # Alternative code for consistency with obj() method
-        # if self._last_Hx is not None and (self._last_x == x).all():
-        #     Hx = self._last_Hx.copy()
-        # else:
-        #     Hx = self.nlp.hprod(self.x_k, None, x)
-        #     self._last_Hx = Hx.copy()
+#        if not (self._last_x == x).all():
+#            self._last_x = x.copy()
+#            self._last_obj = None  # Objective function out of date
+#            self._last_Hx = None   # Hessian out of date
 
-        # g += Hx
-
-        if not (self._last_x == x).all():
-            self._last_x = x.copy()
-            self._last_obj = None  # Objective function out of date
-            self._last_Hx = None   # Hessian product out of date
-
-        self._last_grad_obj = g
+#        self._last_grad_obj = g
         return g
 
     def hprod(self, x, pi, p, **kwargs):
         """
         """
-        if self._last_Hx is not None and (self._last_x == x).all():
-            return self._last_Hx
+#        if self._last_Hx is not None and (self._last_x == x).all():
+#            return self._last_Hx
 
-        if not (self._last_x == x).all():
-            self._last_x = x.copy()
-            self._last_obj = None  # Objective function out of date
-            self._last_grad_obj = None  # Gradient out of date
+ #       if not (self._last_x == x).all():
+ #           self._last_x = x.copy()
+ #           self._last_obj = None  # Objective function out of date
+ #           self._last_grad_obj = None  # Gradient out of date
 
         return self.nlp.hprod(self.x_k, pi, p)

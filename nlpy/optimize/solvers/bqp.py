@@ -87,7 +87,7 @@ class BQP(object):
         self.Uvar = qp.Uvar
         self.H = SimpleLinearOperator(qp.n, qp.n,
                                       lambda u: self.qp.hprod(self.qp.x0,
-                                                              self.qp.pi0,
+                                                              None,
                                                               u),
                                       symmetric=True)
 
@@ -187,6 +187,7 @@ class BQP(object):
 
             xTrial = self.project(x + step * d)
             qTrial = qp.obj(xTrial)
+            #print 'x= ', x
             #print 'xTrial=', xTrial, '  qTrial=', qTrial
             slope = np.dot(g, xTrial-x)
             #print '  step=', step, ', slope=', slope
@@ -240,9 +241,22 @@ class BQP(object):
 
             iter += 1
             qOld = qval
+
             # TODO: Use appropriate initial steplength.
-            (x, qval) = self.projected_linesearch(x, g, -g, qval)
-            #print 'x =', x, '   qval=', qval
+            n = self.qp.n
+            fixed_vars = np.concatenate((lower,upper))
+            free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
+
+            ZHZ = ReducedHessian(self.H, free_vars)
+            Zg  = g[free_vars]
+
+            if np.dot(Zg,ZHZ*Zg) <=0 :
+                step = 10.
+            else:
+                step = np.linalg.norm(Zg)**2 / np.dot(Zg,ZHZ*Zg)
+                #print 'Hessian DP step : ', step
+            #step = 10.
+            (x, qval) = self.projected_linesearch(x, g, -g, qval, step=step)
 
             # Check decrease in objective.
             decrease = qOld - qval
@@ -267,7 +281,7 @@ class BQP(object):
         # Shortcuts for convenience.
         qp = self.qp
         n = qp.n
-        maxiter = kwargs.get('maxiter', 10*n)
+        maxiter = kwargs.get('maxiter', np.maximum(100,10*n))
         self.stoptol = kwargs.get('stoptol', 1.0e-5)
 
         # Compute initial data.
@@ -290,16 +304,16 @@ class BQP(object):
         while not (exitOptimal or exitIter):
 
             iter += 1
-
+            #print ' iter :' , iter
             if iter >= maxiter:
                 exitIter = True
                 continue
 
             # Projected-gradient phase: determine next working set.
             (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
-            #print 'x=', x
             g = qp.grad(x)
             qval = qp.obj(x)
+            #print 'g = ',g, ' lower: ', lower, ' upper: ', upper
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
             #print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
@@ -343,7 +357,9 @@ class BQP(object):
 
             # 4. Update x using projected linesearch with initial step=1.
             #print 'x=', x, '  g=', g, '  d=', d, '  qval=', qval
+            #print 'qOld = ', qval
             (x, qval) = self.projected_linesearch(x, g, d, qval)
+            #print 'qCur = ', qval
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
@@ -371,6 +387,7 @@ class BQP(object):
 
                 # 4. Update x using projected linesearch with initial step=1.
                 (x, qval) = self.projected_linesearch(x, g, d, qval)
+                #print 'q+ =' , qval
                 g = qp.grad(x)
                 pg = self.pgrad(x, g=g, active_set=(lower,upper))
                 pgNorm = np.linalg.norm(pg)
