@@ -281,7 +281,7 @@ class BQP(object):
         # Shortcuts for convenience.
         qp = self.qp
         n = qp.n
-        maxiter = kwargs.get('maxiter', np.maximum(100,10*n))
+        maxiter = kwargs.get('maxiter', 10*n)
         self.stoptol = kwargs.get('stoptol', 1.0e-5)
 
         # Compute initial data.
@@ -304,7 +304,7 @@ class BQP(object):
         while not (exitOptimal or exitIter):
 
             iter += 1
-            #print ' iter :' , iter
+
             if iter >= maxiter:
                 exitIter = True
                 continue
@@ -313,7 +313,6 @@ class BQP(object):
             (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
             g = qp.grad(x)
             qval = qp.obj(x)
-            #print 'g = ',g, ' lower: ', lower, ' upper: ', upper
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
             #print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
@@ -357,9 +356,7 @@ class BQP(object):
 
             # 4. Update x using projected linesearch with initial step=1.
             #print 'x=', x, '  g=', g, '  d=', d, '  qval=', qval
-            #print 'qOld = ', qval
             (x, qval) = self.projected_linesearch(x, g, d, qval)
-            #print 'qCur = ', qval
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
@@ -387,7 +384,6 @@ class BQP(object):
 
                 # 4. Update x using projected linesearch with initial step=1.
                 (x, qval) = self.projected_linesearch(x, g, d, qval)
-                #print 'q+ =' , qval
                 g = qp.grad(x)
                 pg = self.pgrad(x, g=g, active_set=(lower,upper))
                 pgNorm = np.linalg.norm(pg)
