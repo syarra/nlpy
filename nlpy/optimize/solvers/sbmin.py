@@ -268,9 +268,11 @@ class SBMINLbfgsFramework(SBMINFramework):
         the most rencet (s,y) pair to it and possibly discarding the oldest one
         if all the memory has been used.
         """
-        s = self.solver.step
-        y = self.g - self.g_old
-        self.nlp.hupdate(s, y)
+        # LBFGS approximation should only update on *successful* iterations
+        if self.step_status != 'Rej':
+            s = self.solver.step
+            y = self.g - self.g_old
+            self.nlp.hupdate(s, y)
 
 
 

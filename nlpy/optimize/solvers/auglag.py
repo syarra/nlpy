@@ -114,7 +114,6 @@ class AugmentedLagrangian(NLPModel):
         self._last_obj = None
         self._last_infeas = None
         self._last_grad = None
-        self._last_Hx = None
 
 
     # end def
@@ -122,8 +121,6 @@ class AugmentedLagrangian(NLPModel):
 
     # Evaluate infeasibility measure (used in both objective and gradient)
     def get_infeas(self, x, **kwargs):
-        if self._last_infeas is not None and (self._last_x == x).all():
-            return self._last_infeas
 
         nx = self.nx
         nsLL_ind = nx + self.nsLL
@@ -145,42 +142,40 @@ class AugmentedLagrangian(NLPModel):
             infeas[m:] = convals[self.rangeC] + x[nsLR_ind:nsUR_ind] - self.Ucon[self.rangeC]
         # end if
 
-        if not (self._last_x == x).all():
-            self._last_x = x.copy()
-            self._last_obj = None   # Objective out of date
-            self._last_grad = None  # Gradient out of date
-            if not self.approxHess:
-                self._last_Hx = None    # Hessian product out of date
-
-        self._last_infeas = infeas
         return infeas
     # end def
 
 
     # Evaluate augmented Lagrangian function
     def obj(self, x, **kwargs):
-        if self._last_obj is not None and (self._last_x == x).all():
-            return self._last_obj
-
         nx = self.nx
+        same_x = (self._last_x == x).all()
 
-        alfunc = self.nlp.obj(x[:nx])
+        if self._last_obj is not None and same_x:
+            alfunc = self._last_obj
+        else:
+            alfunc = self.nlp.obj(x[:nx])
+            self._last_obj = alfunc.copy()
 
-        infeas = self.get_infeas(x)
+        if self._last_infeas is not None and same_x:
+            infeas = self._last_infeas
+        else:
+            infeas = self.get_infeas(x)
+            self._last_infeas = infeas.copy()
 
         alfunc += numpy.dot(self.pi,infeas)
         alfunc += 0.5*self.rho*numpy.sum(infeas**2)
 
-        self._last_obj = alfunc
+        if not same_x:
+            self._last_x = x.copy()
+            self._last_grad = None
+
         return alfunc
     # end def
 
 
     # Evaluate augmented Lagrangian gradient
     def grad(self, x, **kwargs):
-        if self._last_grad is not None and (self._last_x == x).all():
-            return self._last_grad
-
         nlp = self.nlp
         m = nlp.m
         nx = self.nx
@@ -188,11 +183,22 @@ class AugmentedLagrangian(NLPModel):
         nsUU_ind = nsLL_ind + self.nsUU
         nsLR_ind = nsUU_ind + self.nsLR
         nsUR_ind = nsLR_ind + self.nsUR
+        same_x = (self._last_x == x).all()
 
-        algrad = numpy.zeros(self.n,'d')
-        algrad[:nx] = nlp.grad(x[:nx])
+        if self._last_grad is not None and same_x:
+            algrad = self._last_grad
+        else:
+            algrad = numpy.zeros(self.n,'d')
+            algrad[:nx] = nlp.grad(x[:nx])
+            self._last_grad = algrad.copy()
 
-        infeas = self.get_infeas(x)
+        if self._last_infeas is not None and same_x:
+            infeas = self._last_infeas
+        else:
+            infeas = self.get_infeas(x)
+            self._last_infeas = infeas.copy()
+
+        # infeas = self.get_infeas(x)
         infeas_bar = infeas[:m].copy()
         infeas_bar[nlp.rangeC] += infeas[m:]
         pi_bar = self.pi[:m].copy()
@@ -220,7 +226,10 @@ class AugmentedLagrangian(NLPModel):
                                     - self.rho*infeas[nlp.rangeC]
         algrad[nsLR_ind:nsUR_ind] = self.pi[m:] + self.rho*infeas[m:]
 
-        self._last_grad = algrad
+        if not same_x:
+            self._last_x = x.copy()
+            self._last_obj = None
+
         return algrad
     # end def
 
@@ -245,9 +254,6 @@ class AugmentedLagrangian(NLPModel):
         Lagrangian with arbitrary vector v. Both exact and approximate
         Hessians are supported.
         '''
-
-        if self._last_Hx is not None and (self._last_x == x).all() and not self.approxHess:
-            return self._last_Hx
 
         nlp = self.nlp
         m = nlp.m
@@ -339,7 +345,6 @@ class AugmentedLagrangian(NLPModel):
             # end if
             # Slack variables
             w[nx:] += self.rho*v[nx:]
-            self._last_Hx = w
         # end if
 
         return w
@@ -470,6 +475,9 @@ class AugmentedLagrangianFramework(object):
                 print 'Required constraint         norm = %6.3e'%self.eta
                 print  '\n'
 
+            # if self.iter % 2 == 0:
+            #     pdb.set_trace()
+
             # Perform bound-constrained minimization
             tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
 
@@ -493,7 +501,7 @@ class AugmentedLagrangianFramework(object):
             phi = SBMIN.f
             dphi = SBMIN.g
 
-            self.alprob.hrestart
+            self.alprob.hrestart()
             Pdphi = self.alprob.project_gradient(self.x,dphi)
             Pmax_new = numpy.max(numpy.abs(Pdphi))
             convals_new = self.alprob.get_infeas(self.x)
@@ -514,7 +522,6 @@ class AugmentedLagrangianFramework(object):
                       ' Required gradient   norm =  %6.4e'%self.omega
                 print 'Constraint         norm   =  %6.4e'%max_cons_new, \
                       ' Required constraint norm =  %6.4e'%self.eta
-
 
             # Update penalty parameter or multipliers based on result
             if max_cons_new <= numpy.maximum(self.eta, self.eta_opt):
