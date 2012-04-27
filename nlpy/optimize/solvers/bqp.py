@@ -25,7 +25,6 @@ import pdb
 
 __docformat__ = 'restructuredtext'
 
-
 class SufficientDecreaseCG(TruncatedCG):
     """
     An implementation of the conjugate-gradient algorithm with
@@ -185,9 +184,10 @@ class BQP(object):
         # Perform projected Armijo linesearch.
         while not finished:
 
+            #print 'proj linsearch,  x:', x,' d:', d
             xTrial = self.project(x + step * d)
             qTrial = qp.obj(xTrial)
-            #print 'x= ', x
+            #print 'proj linsearch,  xtrial= ', xTrial
             #print 'xTrial=', xTrial, '  qTrial=', qTrial
             slope = np.dot(g, xTrial-x)
             #print '  step=', step, ', slope=', slope
@@ -196,7 +196,7 @@ class BQP(object):
                 finished = True
             else:
                 step /= 3
-
+            #print 'proj linsearch,  finished:', finished, ' step:', step
         return (xTrial, qTrial)
 
 
@@ -235,28 +235,17 @@ class BQP(object):
         sufficient_decrease = False
         best_decrease = 0
         iter = 0
+        #print 'H:', FormEntireMatrix(self.qp.n, self.qp.n, self.H)
 
         while not settled_down and not sufficient_decrease and \
               iter < maxiter:
 
             iter += 1
             qOld = qval
-
+            #print 'pg iter:', iter, '  x:', x, 'g:', g
             # TODO: Use appropriate initial steplength.
-            n = self.qp.n
-            fixed_vars = np.concatenate((lower,upper))
-            free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
-
-            ZHZ = ReducedHessian(self.H, free_vars)
-            Zg  = g[free_vars]
-
-            if np.dot(Zg,ZHZ*Zg) <=0 :
-                step = 10.
-            else:
-                step = np.linalg.norm(Zg)**2 / np.dot(Zg,ZHZ*Zg)
-                #print 'Hessian DP step : ', step
-            #step = 10.
-            (x, qval) = self.projected_linesearch(x, g, -g, qval, step=step)
+            (x, qval) = self.projected_linesearch(x, g, -g, qval)
+#            print 'x:', x
 
             # Check decrease in objective.
             decrease = qOld - qval
@@ -269,7 +258,6 @@ class BQP(object):
             if identical(lower,lowerTrial) and identical(upper,upperTrial):
                 settled_down = True
             lower, upper = lowerTrial, upperTrial
-
             #print '  qval=', qval, 'lower=', lower, ', upper=', upper
             #print '  settled=', repr(settled_down), ', decrease=', repr(sufficient_decrease)
 
@@ -288,6 +276,9 @@ class BQP(object):
         x = self.project(qp.x0)
         lower, upper = self.get_active_set(x)
         iter = 0
+
+        #print 'x0:', x
+        #print 'qp.Lvar', qp.Lvar, 'qp.Uvar', qp.Uvar
 
         # Compute stopping tolerance.
         g = qp.grad(x)
@@ -310,12 +301,16 @@ class BQP(object):
                 continue
 
             # Projected-gradient phase: determine next working set.
+
+            #print 'x=', x, '  g=', g
             (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
             g = qp.grad(x)
             qval = qp.obj(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
             #print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
+
+            #print 'x=', x, '  g=', g, '  qval=', qval
 
             if pgNorm <= stoptol:
                 exitOptimal = True
@@ -360,7 +355,7 @@ class BQP(object):
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
-
+#            print 'x:',x
             if pgNorm <= stoptol:
                 exitOptimal = True
                 continue

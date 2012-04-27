@@ -71,7 +71,6 @@ class AugmentedLagrangian(NLPModel):
         self.Lvar = self.nlp.Lvar
         self.Uvar = self.nlp.Uvar
         self.x0 = self.nlp.x0
-
     # end def
 
     # Evaluate augmented Lagrangian function
@@ -152,6 +151,39 @@ class AugmentedLagrangian(NLPModel):
 # end class
 
 
+class AugmentedLagrangianLbfgs(AugmentedLagrangian):
+    '''
+    '''
+
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangian.__init__(self, nlp, **kwargs)
+        self.Hessapp = LBFGS(self.n,**kwargs)
+
+    def hprod(self, x, z, v, **kwargs):
+        '''
+        Compute the Hessian-vector product of the Hessian of the augmented
+        Lagrangian with arbitrary vector v.
+        '''
+        w = self.Hessapp.matvec(v)
+        return w
+
+    def hess(self, x, z=None, **kwargs):
+        return SimpleLinearOperator(self.n, self.n, symmetric=True,
+                                    matvec= lambda u: self.hprod(x,z,u))
+
+    def hupdate(self, new_s=None, new_y=None):
+        if new_s is not None and new_y is not None:
+            self.Hessapp.store(new_s,new_y)
+        return
+
+    def hrestart(self):
+        self.Hessapp.restart()
+        return
+
+# end class
+
+
+
 
 class AugmentedLagrangianFramework(object):
     '''
@@ -169,7 +201,7 @@ class AugmentedLagrangianFramework(object):
             Springer, 2006, pp 519--523
     '''
 
-    def __init__(self, nlp, innerSolver, rho_init=10., tau=0.1, **kwargs):
+    def __init__(self, nlp, innerSolver, **kwargs):
 
         '''
         Initialize augmented Lagrangian method and options.
@@ -185,11 +217,11 @@ class AugmentedLagrangianFramework(object):
         self.dphi0 = None
         self.dphi0norm = None
         self.alprob.pi0 = self.pi0
-        self.alprob.rho = numpy.array(rho_init)
-        self.alprob.rho_init = numpy.array(rho_init)
+        self.alprob.rho = kwargs.get('rho_init',numpy.array(10.))
+        self.alprob.rho_init = kwargs.get('rho_init',numpy.array(10.))
         self.rho = self.alprob.rho
         self.pi = self.alprob.pi
-        self.tau = tau
+        self.tau =kwargs.get('tau', 0.1)
         self.omega = None
         self.eta = None
         self.omega_init = kwargs.get('omega_init',.1) # rho_init**-1
@@ -221,7 +253,7 @@ class AugmentedLagrangianFramework(object):
 
         if consnorm <= numpy.maximum(self.eta, self.eta_opt):
             # No change in rho, update multipliers, tighten tolerances
-            self.pi += self.rho*convals
+            self.pi -= self.rho*convals
         else:
             # Increase rho, reset tolerances based on new rho
             self.rho /= self.tau
@@ -261,7 +293,7 @@ class AugmentedLagrangianFramework(object):
         self.iter = 0
         self.inner_fail_count = 0
         self.pg0 = Pmax
-
+        self.niter_total = 0
 
         # Convergence check
         converged = Pmax <= self.omega_opt and max_cons <= self.eta_opt
@@ -279,17 +311,19 @@ class AugmentedLagrangianFramework(object):
                 print  '\n'
 
             # Perform bound-constrained minimization
-            tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
+            #tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
+            tr = TR(eta1=1.0e-4, eta2=.99, gamma1=.3, gamma2=2.5)
 
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
-                                        maxiter = 250,
+                                        maxiter = 100,
                                         verbose=self.sbmin_verbose,
                                         magic_steps=self.magic_steps)
 
             SBMIN.Solve(rho_pen=self.rho,slack_index=original_n)
             self.x = SBMIN.x
             self.f = self.alprob.nlp.obj(self.x[:original_n])
+            self.niter_total += SBMIN.iter
 
             dphi = self.alprob.grad(self.x)
             Pdphi = self.alprob.project_gradient(self.x,dphi)
@@ -298,6 +332,7 @@ class AugmentedLagrangianFramework(object):
 
             if self.alprob.nlp.m == 0:
                 max_cons_new = 0
+                self.iter = SBMIN.iter
             else:
                 max_cons_new = numpy.max(numpy.abs(convals_new))
 
@@ -334,7 +369,7 @@ class AugmentedLagrangianFramework(object):
                     self.inner_fail_count = 0
                 else:
                     self.inner_fail_count += 1
-                    if self.inner_fail_count == 10:
+                    if self.inner_fail_count == 10 and self.printlevel >= 1:
                         print '\n Current point could not be improved, exiting ... \n'
                         break
                 # end if
@@ -374,9 +409,9 @@ class AugmentedLagrangianFramework(object):
     # end def
 # end class
 
-class AugmentedLagrangianLBFGSFramework(object):
+class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
 
-    def __init__(self, nlp, innerSolver):
-        AugmentedLagrangian.__init__(self, innerSolver, rho_init=10., tau=0.1, **kwargs)
-
+    def __init__(self,nlp, innerSolver, **kwargs):
+        AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianLbfgs(nlp)
 
