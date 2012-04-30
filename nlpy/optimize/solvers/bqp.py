@@ -12,7 +12,8 @@ implemented is that of More and Toraldo described in
     SIAM Journal on Optimization, 1(1), pp. 93-113, 1991.
 """
 
-from nlpy.krylov.pcg   import TruncatedCG
+# from nlpy.krylov.pcg   import TruncatedCG2 as TruncatedCG
+from nlpy.krylov.pcg import TruncatedCG
 from nlpy.krylov.linop import SimpleLinearOperator
 from nlpy.krylov.linop import SymmetricallyReducedLinearOperator as ReducedHessian
 from nlpy.tools.utils import identical, where, NullHandler
@@ -259,6 +260,8 @@ class BQP(object):
             #print '  qval=', qval, 'lower=', lower, ', upper=', upper
             #print '  settled=', repr(settled_down), ', decrease=', repr(sufficient_decrease)
 
+        # print 'Projection required %d iterations.'%iter
+
         return (x, (lower, upper))
 
 
@@ -282,7 +285,7 @@ class BQP(object):
 
         pg = self.pgrad(x, g=g, active_set=(lower,upper))
         pgNorm = np.linalg.norm(pg)
-        #print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
+        # print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
 
         exitOptimal = exitIter = False
 
@@ -302,7 +305,7 @@ class BQP(object):
             qval = qp.obj(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
-            #print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
+            # print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
 
             if pgNorm <= stoptol:
                 exitOptimal = True
@@ -313,6 +316,7 @@ class BQP(object):
             # 1. Obtain indices of the free variables.
             fixed_vars = np.concatenate((lower,upper))
             free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
+            # print '%d free variables for CG' % len(free_vars)
 
             # 2. Construct reduced QP.
             #print 'Starting CG on current face.'
@@ -334,7 +338,7 @@ class BQP(object):
 
             # At this point, CG returned from a clean user exit or
             # because its original stopping test was triggered.
-            #print '  CG stops after %d its with status=%s.' % (cg.niter,cg.status)
+            # print '  CG stops after %d its with status=%s.' % (cg.niter,cg.status)
 
             # 3. Expand search direction.
             d = np.zeros(n)
@@ -350,6 +354,7 @@ class BQP(object):
 
             if pgNorm <= stoptol:
                 exitOptimal = True
+                #print 'Exiting with optimal solution.'
                 continue
 
             # Compare active set to binding set.
@@ -359,12 +364,12 @@ class BQP(object):
                 # Continue CG iterations with tighter tolerance.
                 # This currently incurs a little bit of extra work
                 # by instantiating a new CG object.
-                #print 'Active set and binding set match. Continuing CG.'
+                # print 'Active set and binding set match. Continuing CG.'
                 s0 = cg.step[:]
                 cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=False)
                 cg.Solve(s0=s0)
                 #if cg.infDescent: print '    Negative curvature detected (%d its)' % cg.niter
-                #print '    CG stops after %d its with status=%s.' % (cg.niter,cg.status)
+                # print '    CG stops after %d its with status=%s.' % (cg.niter,cg.status)
 
                 d = np.zeros(n)
                 d[free_vars] = cg.step
