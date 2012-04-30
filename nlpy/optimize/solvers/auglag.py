@@ -155,7 +155,7 @@ class AugmentedLagrangian(NLPModel):
             alfunc = self._last_obj
         else:
             alfunc = self.nlp.obj(x[:nx])
-            self._last_obj = alfunc.copy()
+            self._last_obj = alfunc
 
         if self._last_infeas is not None and same_x:
             infeas = self._last_infeas
@@ -417,6 +417,7 @@ class AugmentedLagrangianFramework(object):
 
         # Maximum number of outer iterations (use maxiter or maxinner for TR)
         self.maxouter = kwargs.get('maxouter', 1000)
+        self.maxinner = kwargs.get('maxinner', 1000)
         self.printlevel = kwargs.get('printlevel', 1)
 
         if self.printlevel > 1:
@@ -480,17 +481,18 @@ class AugmentedLagrangianFramework(object):
 
             # Perform bound-constrained minimization
             tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
+            # tr = TR()
 
             if self.alprob.approxHess==True:
                 SBMIN = SBMINLbfgsFramework(self.alprob, tr, TRSolver,
                                             reltol=self.omega, x0=self.x,
-                                            f0=phi, g0=dphi, maxiter = 1000,
+                                            f0=phi, g0=dphi, maxiter=self.maxinner,
                                             verbose=self.sbmin_verbose,
                                             magic_steps=self.magic_steps)
             else:
                 SBMIN = SBMINFramework(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
-                                        f0=phi, g0=dphi, maxiter = 1000,
+                                        f0=phi, g0=dphi, maxiter=self.maxinner,
                                         verbose=self.sbmin_verbose,
                                         magic_steps=self.magic_steps)
 
@@ -566,6 +568,11 @@ class AugmentedLagrangianFramework(object):
             # Update function and gradient calls for next iteration
             phi = self.alprob.obj(self.x)
             dphi = self.alprob.grad(self.x)
+            # Pgrad = self.alprob.project_gradient(self.x,dphi)
+            # Pgrad_new = numpy.max(numpy.abs(Pgrad))
+            # print 'New Projected Gradient Norm = %6.4e'%Pgrad_new
+            # print self.x
+            # print dphi
 
         # end while
 
