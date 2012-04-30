@@ -64,7 +64,7 @@ class SBMINFramework:
         self.g      = None
         self.g_old  = kwargs.get('g0', self.nlp.grad(self.x))
         self.save_g = False              # For methods that need g_{k-1} and g_k
-        self.gnorm  = None
+        self.pgnorm  = None
         self.g0     = None
         self.tsolve = 0.0
 
@@ -128,7 +128,7 @@ class SBMINFramework:
         self.pg0 = self.pgnorm
 
         # Reset initial trust-region radius.
-        self.TR.Delta = .2#0.1 * norms.norm2(self.g)
+        self.TR.Delta = 0.1 * self.pgnorm#norms.norm2(self.g) #2.
 
         self.radii = [ self.TR.Delta ]
 
@@ -163,8 +163,12 @@ class SBMINFramework:
 
             qp = TrustBQPModel(nlp, self.x, self.TR.Delta, g_k=self.g)
 
-            self.solver = self.TrSolver(qp, qp.obj)
-            self.solver.Solve(reltol=reltol)
+            #print 'QP Lvar :', qp.Lvar
+            #print 'QP Uvar :', qp.Uvar
+
+
+            self.solver = self.TrSolver(qp, qp.grad)
+            self.solver.Solve()
 
             step = self.solver.step
             stepnorm = self.solver.stepNorm
@@ -188,7 +192,7 @@ class SBMINFramework:
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
 
-                # (conservative) magical steps go here
+               # (conservative) magical steps go here
                 if self.magic_steps == True:
                     slack_index = kwargs.get('slack_index',self.nlp.n)
                     penalty_rho = kwargs.get('rho_pen',1.)
@@ -201,7 +205,6 @@ class SBMINFramework:
                 self.g = nlp.grad(self.x)
                 self.pgnorm = numpy.max(numpy.abs( \
                                         self.projected_gradient(self.x,self.g)))
-
                 step_status = 'Acc'
 
             else:

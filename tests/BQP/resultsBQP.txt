@@ -1,0 +1,27 @@
+Name              Dim  Iter       Objective   Opt
+-------------------------------------------------
+biggsb1          1000  1143  1.50000000e-02  True
+bqp1var             1     1  0.00000000e+00  True
+bqpgabim           46    14 -3.79034323e-05  True
+bqpgasim           50    12 -5.51981402e-05  True
+chenhark         1000   856 -2.00000000e+00  True
+cvxbqp1         10000     2  2.25022500e+06  True
+harkerp2          100     4 -4.99713169e-01  True
+hs003               2     1  1.88079096e-42  True
+hs3mod              2     2  0.00000000e+00  True
+ncvxbqp1        10000     1 -1.98554385e+10  True
+ncvxbqp2        10000    15 -1.33401112e+10  True
+ncvxbqp3        10000    16 -6.55818386e+09  True
+obstclal           64    12  1.39789756e+00  True
+obstclbl           64     8  2.87503823e+00  True
+obstclbu           64     9  2.87503823e+00  True
+oslbqp              8     1  6.25000000e+00  True
+pentdi           1000     1 -7.50000000e-01  True
+qudlin             12     1 -7.20000000e+03  True
+sim2bqp             2     1  0.00000000e+00  True
+simbqp              2     1  0.00000000e+00  True
+ConvexQP1           2     5  3.86447320e-19  True
+ConvexQP2           2     1  3.00000000e+00  True
+ConvexQP3           3     4  1.14068792e-20  True
+IndefiniteQP1       2     2 -2.50000000e-01  True
+NonConvexQP1        2     1 -9.00000000e+00  True
