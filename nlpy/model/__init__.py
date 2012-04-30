@@ -6,6 +6,8 @@ from nlp         import *
 from amplpy      import *
 from noisynlp    import *
 from slacks      import *
+from mfnlp       import *
+
 try:
     from adolcmodel  import *
 except:

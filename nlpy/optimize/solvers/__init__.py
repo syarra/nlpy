@@ -12,5 +12,7 @@ from funnel  import *
 from elastic import *
 from sbmin   import *
 from auglag  import *
+from auglag2 import *
+from bqp     import *
 
 __all__ = filter(lambda s:not s.startswith('_'), dir())
