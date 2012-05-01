@@ -25,6 +25,14 @@ import pdb
 
 __docformat__ = 'restructuredtext'
 
+def FormEntireMatrix(on,om,Jop):
+    J = np.zeros([om,on])
+    for i in range(0,on):
+        v = np.zeros(on)
+        v[i] = 1.
+        J[:,i] = Jop * v
+    return J
+
 class SufficientDecreaseCG(TruncatedCG):
     """
     An implementation of the conjugate-gradient algorithm with
@@ -84,6 +92,7 @@ class BQP(object):
         self.qp = qp
         self.Lvar = qp.Lvar
         self.Uvar = qp.Uvar
+        #print qp.n
         self.H = SimpleLinearOperator(qp.n, qp.n,
                                       lambda u: self.qp.hprod(self.qp.x0,
                                                               None,
@@ -161,7 +170,7 @@ class BQP(object):
         Returns the couple (lower,upper) containing the indices of variables
         that are at their lower and upper bound, respectively.
         """
-        if check_feasible: self.check_feasible(x)
+        #if check_feasible: self.check_feasible(x)
 
         lower_active = where(x==self.Lvar)
         upper_active = where(x==self.Uvar)
@@ -182,9 +191,9 @@ class BQP(object):
         finished = False
 
         # Perform projected Armijo linesearch.
-        while not finished:
+        while not finished and step >= 1e-21:
 
-            #print 'proj linsearch,  x:', x,' d:', d
+            #print 'proj linsearch,  x:', x,' d:', d, 'step', step
             xTrial = self.project(x + step * d)
             qTrial = qp.obj(xTrial)
             #print 'proj linsearch,  xtrial= ', xTrial
@@ -196,7 +205,7 @@ class BQP(object):
                 finished = True
             else:
                 step /= 3
-            #print 'proj linsearch,  finished:', finished, ' step:', step
+            #print 'proj linsearch step:', step
         return (xTrial, qTrial)
 
 
@@ -242,26 +251,65 @@ class BQP(object):
 
             iter += 1
             qOld = qval
-            #print 'pg iter:', iter, '  x:', x, 'g:', g
+            #print 'pg iter:', iter, '  x:', x, 'qval:', qval, 'g:', g
             # TODO: Use appropriate initial steplength.
             (x, qval) = self.projected_linesearch(x, g, -g, qval)
-#            print 'x:', x
 
             # Check decrease in objective.
             decrease = qOld - qval
+            #print 'decrease', decrease, 'best_decrease:', best_decrease
+
             if decrease <= self.pgrad_reltol * best_decrease:
                 sufficient_decrease = True
             best_decrease = max(best_decrease, decrease)
+
+            #if np.dot(Zg,ZHZ*Zg) <=0 :
+            #    sufficient_decrease = True
 
             # Check active set at updated iterate.
             lowerTrial, upperTrial = self.get_active_set(x)
             if identical(lower,lowerTrial) and identical(upper,upperTrial):
                 settled_down = True
             lower, upper = lowerTrial, upperTrial
+            g = self.qp.grad(x)
             #print '  qval=', qval, 'lower=', lower, ', upper=', upper
             #print '  settled=', repr(settled_down), ', decrease=', repr(sufficient_decrease)
 
         return (x, (lower, upper))
+
+    def to_boundary(self, x, d, free_vars):
+        """
+        Given vectors `x` and `d` and some bounds on x,
+        return a positive alpha such that
+
+          `x + alpha * d = boundary
+        """
+        if np.all(d[free_vars]==0.) == 0:
+
+            # Follow the direction of negative curvature until it hits a bound
+            aup = (self.Uvar[free_vars]-x[free_vars])/d[free_vars]
+            aupp = aup[aup>0]
+            if aupp.size != 0:
+                aupmin = np.min(aupp)
+            else: aupmin = np.infty
+            alow = (self.Lvar[free_vars]-x[free_vars])/d[free_vars]
+            alowp = alow[alow>0]
+            if alowp.size != 0:
+                alowmin = np.min(alowp)
+            else: alowmin = np.infty
+            #print 'aupmin:', aupmin#, 'x+ad:', x+aupmin*d
+            #print 'alowmin:', alowmin#, 'x+ad:', x+alowmin*d
+            alpha = np.minimum(alowmin, aupmin)
+            #print 'alpha:', alpha
+            #print 'x:', x
+            x += alpha*d
+            #x[0] = qp.Uvar[0]
+            #print 'x: here', x
+
+        # Do another projected gradient
+        (x, (lower,upper)) = self.projected_gradient(x)
+
+        return (x, (lower,upper))
 
 
     def solve(self, **kwargs):
@@ -271,6 +319,10 @@ class BQP(object):
         n = qp.n
         maxiter = kwargs.get('maxiter', 10*n)
         self.stoptol = kwargs.get('stoptol', 1.0e-5)
+
+        #print qp.Lvar, qp.Uvar
+        #print ' gradient:', qp.grad(qp.x0)
+        #print ' Hessian:', FormEntireMatrix(qp.n,qp.n, self.H)
 
         # Compute initial data.
         x = self.project(qp.x0)
@@ -295,14 +347,14 @@ class BQP(object):
         while not (exitOptimal or exitIter):
 
             iter += 1
-
+            #print ' bqp iter:', iter
             if iter >= maxiter:
                 exitIter = True
                 continue
 
             # Projected-gradient phase: determine next working set.
 
-            #print 'x=', x, '  g=', g
+            #print 'iter:', iter, 'x=', x, '  g=', g
             (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
             g = qp.grad(x)
             qval = qp.obj(x)
@@ -329,7 +381,7 @@ class BQP(object):
             #print 'Free vars: ', free_vars
             #print 'ZHZ.shape: ', ZHZ.shape, ' ZHZ=', ZHZ.__mul__(np.ones(ZHZ.shape[1]))
             #print 'len(Zg)  : ', len(Zg), '  Zg=', Zg
-            cg = SufficientDecreaseCG(Zg, ZHZ)
+            cg = SufficientDecreaseCG(Zg, ZHZ)#, radius=qp.delta)
             try:
                 cg.Solve()
             except UserExitRequest:
@@ -337,31 +389,37 @@ class BQP(object):
                 #print 'CG is no longer making substantial progress (%d its)' % cg.niter
                 pass
 
-            # Temporary check.
-            #if cg.infDescent: print '  Negative curvature detected (%d its)' % cg.niter
-
             # At this point, CG returned from a clean user exit or
             # because its original stopping test was triggered.
             #print '  CG stops after %d its with status=%s.' % (cg.niter,cg.status)
-
+            #print cg.step
             # 3. Expand search direction.
             d = np.zeros(n)
             d[free_vars] = cg.step
             #print 'cp.step=', cg.step
 
-            # 4. Update x using projected linesearch with initial step=1.
-            #print 'x=', x, '  g=', g, '  d=', d, '  qval=', qval
-            (x, qval) = self.projected_linesearch(x, g, d, qval)
+            # Temporary check.
+            if cg.infDescent:
+                #print '    Negative curvature detected (%d its)' % cg.niter
+                (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+            else:
+                #print 'CG direction is good'
+                # 4. Update x using projected linesearch with initial step=1.
+                #print 'x=', x, '  g=', g, '  d=', d, '  qval=', qval
+                (x, qval) = self.projected_linesearch(x, g, d, qval)
+
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
-#            print 'x:',x
+#               print 'x:',x
+
             if pgNorm <= stoptol:
                 exitOptimal = True
                 continue
 
             # Compare active set to binding set.
             lower, upper = self.get_active_set(x)
+
             if np.all(g[lower] >= 0) and np.all(g[upper] <= 0):
                 # The active set agrees with the binding set.
                 # Continue CG iterations with tighter tolerance.
@@ -371,14 +429,18 @@ class BQP(object):
                 s0 = cg.step[:]
                 cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=False)
                 cg.Solve(s0=s0)
-                #if cg.infDescent: print '    Negative curvature detected (%d its)' % cg.niter
-                #print '    CG stops after %d its with status=%s.' % (cg.niter,cg.status)
 
                 d = np.zeros(n)
                 d[free_vars] = cg.step
 
-                # 4. Update x using projected linesearch with initial step=1.
-                (x, qval) = self.projected_linesearch(x, g, d, qval)
+                if cg.infDescent:
+                    #print '    Negative curvature detected (%d its)' % cg.niter
+                    (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+
+                else:
+                    #print 'CG direction is good'
+                    # 4. Update x using projected linesearch with initial step=1.
+                    (x, qval) = self.projected_linesearch(x, g, d, qval)
                 g = qp.grad(x)
                 pg = self.pgrad(x, g=g, active_set=(lower,upper))
                 pgNorm = np.linalg.norm(pg)
