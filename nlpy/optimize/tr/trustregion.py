@@ -58,8 +58,8 @@ class TrustRegionFramework:
         Compute the ratio of actual versus predicted reduction
         rho = (f - f_trial)/(-m)
         """
-        pred = -m + max(1.0, abs(f)) * 10.0 * self.eps
-        ared = f - f_trial + max(1.0, abs(f)) * 10.0 * self.eps
+        pred = -m + np.max(1.0, np.abs(f)) * 10.0 * self.eps
+        ared = f - f_trial + np.max(1.0, np.abs(f)) * 10.0 * self.eps
         if pred > 0 or not check_positive:
             return ared/pred
         else:

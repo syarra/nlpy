@@ -266,6 +266,7 @@ class AugmentedLagrangianFramework(object):
         self.omega_opt = kwargs.get('omega_opt',1.e-7)
         self.eta_opt = kwargs.get('eta_opt',1.e-7)
         self.magic_steps = kwargs.get('magic_steps',False)
+        self.ny = kwargs.get('ny',True)
 
         self.f0 = None
         self.f = +numpy.infty
@@ -366,7 +367,8 @@ class AugmentedLagrangianFramework(object):
                                         reltol=self.omega, x0=self.x,
                                         maxiter = 250,
                                         verbose=True,
-                                        magic_steps=self.magic_steps)
+                                        magic_steps=self.magic_steps,
+                                        ny=self.ny)
 
             SBMIN.Solve(rho_pen=self.rho,slack_index=original_n)
             self.x = SBMIN.x.copy()
