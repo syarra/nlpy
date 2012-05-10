@@ -54,7 +54,7 @@ class InverseLBFGS:
         self.insert = 0
 
         # Threshold on dot product s'y to accept a new pair (s,y).
-        self.accept_threshold = 1.0e-12
+        self.accept_threshold = 1.0e-20
 
         # Storage of the (s,y) pairs
         self.s = numpy.empty((self.n, self.npairs), 'd')
@@ -86,6 +86,8 @@ class InverseLBFGS:
             self.ys[insert] = ys
             self.insert += 1
             self.insert = self.insert % self.npairs
+        else:
+            print "Not accepting LBFGS update: ys = ",ys
         return
 
     def restart(self):
