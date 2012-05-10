@@ -49,17 +49,7 @@ class MFModel(NLPModel):
 
         # Standard NLP initialization
         NLPModel.__init__(self,n=n,m=m,name=name,**kwargs)
-
-        # Additional elements for this class
-        self.JTprod = 0 # Counter for Jacobian-transpose products
-
     # end def
-
-    def ResetCounters(self):
-
-        NLPModel.ResetCounters()
-        self.JTprod = 0
-
 
     def jac(self, x, **kwargs):
         return SimpleLinearOperator(self.m, self.n, symmetric=False,
@@ -405,7 +395,8 @@ class MFAmplModel(AmplModel):
     def __init__(self, stub, **kwargs):
 
         AmplModel.__init__(self, stub, **kwargs)
-
+        self.Jprod = 0
+        self. JTprod = 0
 
     def _J(self, x, *args, **kwargs):
         """
@@ -429,7 +420,6 @@ class MFAmplModel(AmplModel):
                 return None
         else:
             J = self.model.eval_J(x, self.mformat, store_zeros)
-        self.Jeval += 1
 
         # Warning!! This next line doesn't work for the coordinate format option.
         if self.scale_con is not None:
@@ -438,9 +428,11 @@ class MFAmplModel(AmplModel):
 
 
     def jprod(self, x, v, **kwargs):
+        self.Jprod += 1
         return self._J(x, **kwargs) * v
 
     def jtprod(self, x, v, **kwargs):
+        self.JTprod += 1
         return self._J(x, **kwargs).T * v
 
 
