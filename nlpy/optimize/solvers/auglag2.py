@@ -89,13 +89,9 @@ class AugmentedLagrangian(NLPModel):
     # Evaluate augmented Lagrangian gradient
     def grad(self, x, **kwargs):
         nlp = self.nlp
-
         J = nlp.jac(x)
         cons = nlp.cons(x)
         algrad = nlp.grad(x) + J.T * ( -self.pi + self.rho * cons)
-
-        on = nlp.original_n
-        om = nlp.original_m
 
         return algrad
     # end def
@@ -157,7 +153,7 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangian.__init__(self, nlp, **kwargs)
-        self.Hessapp = LBFGS(self.n,**kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=5, **kwargs)
 
     def hprod(self, x, z, v, **kwargs):
         '''
@@ -179,6 +175,40 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
     def hrestart(self):
         self.Hessapp.restart()
         return
+
+    def Hprod(self, x, z, v, **kwargs):
+        '''
+        Compute the Hessian-vector product of the Hessian of the augmented
+        Lagrangian with arbitrary vector v.
+        '''
+        nlp = self.nlp
+        on = nlp.original_n
+        om = nlp.original_m
+        upperC = nlp.upperC ; nupperC = nlp.nupperC
+        rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
+
+
+        w = numpy.zeros(self.n)
+
+        pi_bar = self.pi[:om].copy()
+        pi_bar[upperC] *= -1.0
+        pi_bar[rangeC] -= self.pi[om:].copy()
+
+        cons = nlp.cons(x)
+        mu = cons[:om].copy()
+        mu[upperC] *= -1.0
+        mu[rangeC] -= cons[om:].copy()
+
+        w[:on] = nlp.hprod(x[:on],pi_bar - self.rho * mu, v[:on])
+
+        J = nlp.jac(x)
+        w += self.rho * (J.T * (J * v))
+
+        return w
+
+    def Hess(self, x, z=None, **kwargs):
+        return SimpleLinearOperator(self.n, self.n, symmetric=True,
+                                    matvec= lambda u: self.Hprod(x,z,u))
 
 # end class
 
@@ -224,8 +254,10 @@ class AugmentedLagrangianFramework(object):
         self.tau =kwargs.get('tau', 0.1)
         self.omega = None
         self.eta = None
-        self.omega_init = kwargs.get('omega_init',.1) # rho_init**-1
-        self.eta_init = kwargs.get('eta_init',0.1) # rho_init**-0.1
+        self.eta0 = 0.1258925
+        self.omega0 = 1.
+        self.omega_init = kwargs.get('omega_init',self.omega0*0.1) # rho_init**-1
+        self.eta_init = kwargs.get('eta_init',self.eta0**0.1) # rho_init**-0.1
         self.a_omega = kwargs.get('a_omega',1.)
         self.b_omega = kwargs.get('b_omega',1.)
         self.a_eta = kwargs.get('a_eta',0.1)
@@ -316,12 +348,12 @@ class AugmentedLagrangianFramework(object):
 
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
-                                        maxiter = 100,
+                                        maxiter = 250,
                                         verbose=self.sbmin_verbose,
                                         magic_steps=self.magic_steps)
 
             SBMIN.Solve(rho_pen=self.rho,slack_index=original_n)
-            self.x = SBMIN.x
+            self.x = SBMIN.x.copy()
             self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.niter_total += SBMIN.iter
 
@@ -379,11 +411,13 @@ class AugmentedLagrangianFramework(object):
                 # Increase rho, reset tolerances based on new rho
                 self.UpdateMultipliersOrPenaltyParameters(max_cons_new,
                                                          convals_new)
-                self.eta = self.eta_init*self.rho**-self.a_eta
-                self.omega = self.omega_init*self.rho**-self.a_omega
+                self.eta = self.eta0*self.rho**-self.a_eta
+                self.omega = self.omega0*self.rho**-self.a_omega
+
                 if self.printlevel>=1:
                     print '\n******  Keeping current multipliers estimates  ******\n'
             # end if
+            #print 'lambda/rho:', numpy.max(numpy.abs(self.pi))/self.rho
 
             # Safeguard: tightest tolerance should be near optimality to prevent excessive
             # inner loop iterations at the end of the algorithm
@@ -414,4 +448,8 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
         self.alprob = AugmentedLagrangianLbfgs(nlp)
-
+        self.alprob.pi0 = self.pi0
+        self.alprob.rho = kwargs.get('rho_init',numpy.array(10.))
+        self.alprob.rho_init = kwargs.get('rho_init',numpy.array(10.))
+        self.rho = self.alprob.rho
+        self.pi = self.alprob.pi
