@@ -341,11 +341,10 @@ class AugmentedLagrangianFramework(object):
 
 
         # Print out header and initial log.
-        if self.verbose:
-            self.log.info(self.hline)
-            self.log.info(self.header)
-            self.log.info(self.hline)
-            self.log.info(self.format0 % (self.iter, self.f,
+        self.log.info(self.hline)
+        self.log.info(self.header)
+        self.log.info(self.hline)
+        self.log.info(self.format0 % (self.iter, self.f,
                                              self.pg0, '', max_cons,
                                              '', self.rho,''))
         # While not converged, loop
@@ -389,13 +388,12 @@ class AugmentedLagrangianFramework(object):
             self.pgnorm = Pmax_new
 
             # Print out header, say, every 20 iterations
-            if self.iter % 20 == 0 and self.verbose:
+            if self.iter % 20 == 0:
                 self.log.info(self.hline)
                 self.log.info(self.header)
                 self.log.info(self.hline)
 
-            if self.verbose:
-                self.log.info(self.format % (self.iter, self.f,
+            self.log.info(self.format % (self.iter, self.f,
                           self.pgnorm, self.omega , max_cons_new,
                           self.eta, self.rho, SBMIN.iter))
 
@@ -433,8 +431,7 @@ class AugmentedLagrangianFramework(object):
                         print '\n Current point could not be improved, exiting ... \n'
                         break
                 # end if
-                if self.verbose:#self.printlevel>=1:
-                    self.log.debug('******  Updating multipliers estimates  ******\n')
+                self.log.debug('******  Updating multipliers estimates  ******\n')
             else:
                 # Increase rho, reset tolerances based on new rho
                 self.UpdateMultipliersOrPenaltyParameters(max_cons_new,
@@ -442,8 +439,7 @@ class AugmentedLagrangianFramework(object):
                 self.eta = self.eta0*self.rho**-self.a_eta
                 self.omega = self.omega0*self.rho**-self.a_omega
 
-                if self.verbose:#self.printlevel>=1:
-                    self.log.debug('******  Keeping current multipliers estimates  ******\n')
+                self.log.debug('******  Keeping current multipliers estimates  ******\n')
             # end if
 
             # Safeguard: tightest tolerance should be near optimality to prevent excessive

@@ -341,11 +341,10 @@ class BQP(object):
 
 
         # Print out header and initial log.
-        if self.verbose:
-            self.log.info(self.hline)
-            self.log.info(self.header)
-            self.log.info(self.hline)
-            self.log.info(self.format0 % (iter,0.0,
+        self.log.info(self.hline)
+        self.log.info(self.header)
+        self.log.info(self.hline)
+        self.log.info(self.format0 % (iter,0.0,
                                              pgNorm, ''))
 
         #while pgNorm > stoptol and iter < maxiter:
@@ -371,8 +370,7 @@ class BQP(object):
 
             if pgNorm <= stoptol:
                 exitOptimal = True
-                if self.verbose:
-                    self.log.info(self.format % (iter, qval,
+                self.log.info(self.format % (iter, qval,
                               pgNorm, 0))
 
                 continue
@@ -420,8 +418,7 @@ class BQP(object):
 
             if pgNorm <= stoptol:
                 exitOptimal = True
-                if self.verbose:
-                    self.log.info(self.format % (iter, qval,
+                self.log.info(self.format % (iter, qval,
                               pgNorm, cg.niter))
                 continue
 
@@ -452,8 +449,7 @@ class BQP(object):
                 pgNorm = np.linalg.norm(pg)
 
 
-            if self.verbose:
-                self.log.info(self.format % (iter, qval,
+            self.log.info(self.format % (iter, qval,
                           pgNorm, cg.niter))
 
         self.exitOptimal = exitOptimal

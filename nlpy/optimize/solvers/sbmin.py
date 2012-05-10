@@ -148,11 +148,10 @@ class SBMINFramework:
         t = cputime()
 
         # Print out header and initial log.
-        if self.verbose:
-            self.log.info(self.hline)
-            self.log.info(self.header)
-            self.log.info(self.hline)
-            self.log.info(self.format0 % (self.iter, self.f,
+        self.log.info(self.hline)
+        self.log.info(self.header)
+        self.log.info(self.hline)
+        self.log.info(self.format0 % (self.iter, self.f,
                                              self.pgnorm, '', '',
                                              '', ''))
 
@@ -243,14 +242,13 @@ class SBMINFramework:
                 status = 'usr'
 
             # Print out header, say, every 20 iterations
-            if self.iter % 20 == 0 and self.verbose:
+            if self.iter % 20 == 0:
                 self.log.info(self.hline)
                 self.log.info(self.header)
                 self.log.info(self.hline)
 
-            if self.verbose:
-                pstatus = step_status if step_status != 'Acc' else ''
-                self.log.info(self.format % (self.iter, self.f,
+            pstatus = step_status if step_status != 'Acc' else ''
+            self.log.info(self.format % (self.iter, self.f,
                           self.pgnorm, bqpiter, rho,
                           self.radii[-2], pstatus))
 

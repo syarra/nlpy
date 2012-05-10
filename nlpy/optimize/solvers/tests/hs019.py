@@ -130,7 +130,6 @@ fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
 hndlr = logging.StreamHandler()
 hndlr.setLevel(logging.DEBUG)
 hndlr.setFormatter(fmt)
-log.addHandler(hndlr)
 
 # Configure auglag logger.
 auglaglogger = logging.getLogger('nlpy.auglag')
