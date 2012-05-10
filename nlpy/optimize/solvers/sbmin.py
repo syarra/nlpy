@@ -1,8 +1,6 @@
 """
  SBMIN
  Trust-Region Method for box constrained Programming.
-
- A first unconstrained optimization solver in Python
 """
 
 from nlpy.optimize.solvers import lbfgs    # For Hessian Approximate
@@ -15,10 +13,17 @@ import logging
 import pdb
 from math import sqrt
 from nlpy.model import NLPModel
-
+from nlpy.krylov.linop import SimpleLinearOperator
 
 __docformat__ = 'restructuredtext'
 
+def FormEntireMatrix(on,om,Jop):
+    J = numpy.zeros([om,on])
+    for i in range(0,on):
+        v = numpy.zeros(on)
+        v[i] = 1.
+        J[:,i] = Jop * v
+    return J
 
 class SBMINFramework:
     """
@@ -58,11 +63,14 @@ class SBMINFramework:
         self.TrSolver = TrSolver
         self.solver   = None    # Will point to solver data in Solve()
         self.iter   = 0         # Iteration counter
-        self.x      = kwargs.get('x0', self.nlp.x0.copy())
+        self.x0      = kwargs.get('x0', self.nlp.x0.copy())
+        self.x = None
         self.f      = None
-        self.f0     = kwargs.get('f0', self.nlp.obj(self.x))
+        self.f0     = kwargs.get('f0', self.nlp.obj(self.x0))
         self.g      = None
-        self.g_old  = kwargs.get('g0', self.nlp.grad(self.x))
+        self.g_old  = kwargs.get('g0', None)
+        if self.g_old == None:
+            self.g_old = self.nlp.grad(self.x0)
         self.save_g = False              # For methods that need g_{k-1} and g_k
         self.pgnorm  = None
         self.g0     = None
@@ -72,11 +80,10 @@ class SBMINFramework:
         self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
         self.magic_steps = kwargs.get('magic_steps',False)
         self.verbose = kwargs.get('verbose', True)
-        self.logger = kwargs.get('logger', None)
         self.total_bqpiter = 0
 
         self.hformat = '%-5s  %8s  %7s  %5s  %8s  %8s  %4s'
-        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','cg','rho','Radius','Stat')
+        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','bqp','rho','Radius','Stat')
         self.hlen   = len(self.header)
         self.hline  = '     '+'-' * self.hlen
         self.format = '     %-5d  %8.2e  %7.1e  %5d  %8.1e  %8.1e  %4s'
@@ -101,7 +108,6 @@ class SBMINFramework:
         Compute the projected gradient of f(x) into the feasible box
 
                    l <= x <= u
-
         """
         p = x - g
         med = numpy.maximum(numpy.minimum(p,self.nlp.Uvar),self.nlp.Lvar)
@@ -121,6 +127,7 @@ class SBMINFramework:
         nlp = self.nlp
 
         # Gather initial information.
+        self.x = self.x0.copy()
         self.f        = self.f0
         self.g        = self.g_old
         self.pgnorm = numpy.max(numpy.abs( \
@@ -128,7 +135,7 @@ class SBMINFramework:
         self.pg0 = self.pgnorm
 
         # Reset initial trust-region radius.
-        self.TR.Delta = 0.1 * self.pgnorm#norms.norm2(self.g) #2.
+        self.TR.Delta = numpy.maximum(0.1 * self.pgnorm,.2)
 
         self.radii = [ self.TR.Delta ]
 
@@ -142,12 +149,12 @@ class SBMINFramework:
 
         # Print out header and initial log.
         if self.verbose:
-            print self.hline
-            print self.header
-            print self.hline
-            print self.format0 % (self.iter, self.f,
+            self.log.info(self.hline)
+            self.log.info(self.header)
+            self.log.info(self.hline)
+            self.log.info(self.format0 % (self.iter, self.f,
                                              self.pgnorm, '', '',
-                                             '', '')
+                                             '', ''))
 
         while not (exitUser or exitOptimal or exitIter or exitTR):
 
@@ -161,7 +168,19 @@ class SBMINFramework:
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
 
-            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, g_k=self.g)
+            #H = SimpleLinearOperator(nlp.n,nlp.n, symmetric=True,
+            #    matvec = lambda u: nlp.hprod(self.x, [], u))
+            #print 'sbmin   : x', self.x
+
+            #print 'sbmin   : gradient', self.g
+            #print 'g: ', nlp.grad(self.x)
+            #print 'sbmin   : hessian', FormEntireMatrix(nlp.n,nlp.n, H)
+            #print 'delta:', self.TR.Delta
+            #print 'x: %.15f, %.15f, %.15f, %.15f' %(self.x[0], self.x[1], self.x[2], self.x[3])
+            #print 'pi: %.15f, %.15f' %(nlp.pi[0],nlp.pi[1])
+            #print 'rho: %.15f' % nlp.rho
+
+            qp = TrustBQPModel(nlp, self.x.copy(), self.TR.Delta, g_k=self.g)
 
             #print 'QP Lvar :', qp.Lvar
             #print 'QP Uvar :', qp.Uvar
@@ -171,26 +190,30 @@ class SBMINFramework:
             self.solver.Solve()
 
             step = self.solver.step
+            #print 'step:', step
             stepnorm = self.solver.stepNorm
             bqpiter = self.solver.niter
+            #print 'stepnorm:', stepnorm
 
             # Obtain model value at next candidate
             m = self.solver.m
-            if m is None:
-                m = numpy.dot(self.g, step) + 0.5*numpy.dot(step, H * step)
+            #print m
+#            if m is None:
+#                m = numpy.dot(self.g, step) + 0.5*numpy.dot(step, H * step)
 
             self.total_bqpiter += bqpiter
-            x_trial = self.x + step
+            x_trial = self.x.copy() + step
             f_trial = nlp.obj(x_trial)
+            #print 'f:', self.f, '  ftrial:', f_trial, '  m:', m
 
-            rho  = self.TR.Rho(self.f, f_trial, m)
+            rho  = self.TR.Rho(self.f, f_trial, m, check_positive=False)
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
 
                 # Trust-region step is succesfull.
                 self.TR.UpdateRadius(rho, stepnorm)
-                self.x = x_trial
+                self.x = x_trial.copy()
 
                # (conservative) magical steps go here
                 if self.magic_steps == True:
@@ -220,16 +243,16 @@ class SBMINFramework:
                 status = 'usr'
 
             # Print out header, say, every 20 iterations
-            if self.verbose:
+            if self.iter % 20 == 0 and self.verbose:
                 self.log.info(self.hline)
                 self.log.info(self.header)
                 self.log.info(self.hline)
 
             if self.verbose:
                 pstatus = step_status if step_status != 'Acc' else ''
-                print self.format % (self.iter, self.f,
+                self.log.info(self.format % (self.iter, self.f,
                           self.pgnorm, bqpiter, rho,
-                          self.radii[-2], pstatus)
+                          self.radii[-2], pstatus))
 
             exitOptimal = self.pgnorm <= reltol
             exitIter    = self.iter > self.maxiter
@@ -276,8 +299,6 @@ class SBMINLbfgsFramework(SBMINFramework):
         self.nlp.hupdate(s, y)
 
 
-
-
 class TrustBQPModel(NLPModel):
     """
     Class for defining a Model to pass to BQP solver:
@@ -299,16 +320,11 @@ class TrustBQPModel(NLPModel):
                           Lvar=Lvar ,Uvar =Uvar)
         self.nlp = nlp
         self.x0 = numpy.zeros(self.nlp.n)
-        self.x_k = x_k
+        self.x_k = x_k.copy()
         self.delta = delta
-        self.g_k = kwargs.get('g_k',self.nlp.grad(self.x_k))
-
-        # Saved values (private).
-        self._last_x = numpy.infty * numpy.ones(self.nlp.n)
-        self._last_obj = None
-        self._last_grad_obj = None
-        self._last_Hx = None
-
+        self.g_k = kwargs.get('g_k', None)
+        if self.g_k == None:
+            self.g_k = self.nlp.grad(self.x_k)
 
     def obj(self, x, **kwargs):
         """
@@ -321,60 +337,21 @@ class TrustBQPModel(NLPModel):
         and `H` is  the Hessian of the Augmented Lagrangian evaluated at x_k.
 
         """
-        if self._last_obj is not None and (self._last_x == x).all():
-            return self._last_obj
-
-        if self._last_Hx is not None and (self._last_x == x).all():
-            Hx = self._last_Hx.copy()
-        else:
-            Hx = self.nlp.hprod(self.x_k, None, x)
-            self._last_Hx = Hx.copy()
+        Hx = self.nlp.hprod(self.x_k, None, x)
 
         qapprox = numpy.dot(self.g_k.copy(), x)
         qapprox += .5 * numpy.dot(x, Hx)
 
-        if not (self._last_x == x).all():
-            self._last_x = x.copy()
-            self._last_grad_obj = None  # Gradient out of date
-
-        self._last_obj = qapprox
         return qapprox
 
     def grad(self, x, **kwargs):
         """
         """
-        if self._last_grad_obj is not None and (self._last_x == x).all():
-            return self._last_grad_obj
-
         g = self.g_k.copy()
         g += self.nlp.hprod(self.x_k, None, x)
-
-        # Alternative code for consistency with obj() method
-        # if self._last_Hx is not None and (self._last_x == x).all():
-        #     Hx = self._last_Hx.copy()
-        # else:
-        #     Hx = self.nlp.hprod(self.x_k, None, x)
-        #     self._last_Hx = Hx.copy()
-
-        # g += Hx
-
-        if not (self._last_x == x).all():
-            self._last_x = x.copy()
-            self._last_obj = None  # Objective function out of date
-            self._last_Hx = None   # Hessian product out of date
-
-        self._last_grad_obj = g
         return g
 
     def hprod(self, x, pi, p, **kwargs):
         """
         """
-        if self._last_Hx is not None and (self._last_x == x).all():
-            return self._last_Hx
-
-        if not (self._last_x == x).all():
-            self._last_x = x.copy()
-            self._last_obj = None  # Objective function out of date
-            self._last_grad_obj = None  # Gradient out of date
-
         return self.nlp.hprod(self.x_k, pi, p)

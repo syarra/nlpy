@@ -17,6 +17,7 @@ import copy
 # External Python modules
 # =============================================================================
 import numpy
+import logging
 
 # =============================================================================
 # Extension modules
@@ -273,12 +274,20 @@ class AugmentedLagrangianFramework(object):
         self.maxouter = kwargs.get('maxouter', 10*self.alprob.nlp.original_n)
         self.printlevel = kwargs.get('printlevel', 1)
 
-        if self.printlevel > 1:
-            self.sbmin_verbose = True
-        else: self.sbmin_verbose = False
-        # (Future: create a logger to track problem data and print)
+        self.verbose = kwargs.get('verbose', True)
+        self.hformat = '%-5s  %8s  %8s  %8s  %8s  %8s  %8s  %8s'
+        self.header  = self.hformat % ('Iter','f(x)','|pg(x)|','eps_g','|c(x)|','eps_c', 'penalty', 'sbmin')
+        self.hlen   = len(self.header)
+        self.hline  = '-' * self.hlen
+        self.format = '%-5d  %8.1e  %8.1e  %8.1e  %8.1e  %8.1e  %8.1e  %5d'
+        self.format0= '%-5d  %8.1e  %8.1e  %8s  %8s  %8s  %8s  %5s'
 
-    # end def
+        # Setup the logger. Install a NullHandler if no output needed.
+        logger_name = kwargs.get('logger_name', 'nlpy.auglag')
+        self.log = logging.getLogger(logger_name)
+        #self.log.addHandler(logging.NullHandler())
+        if not self.verbose:
+            self.log.propagate=False
 
 
     def UpdateMultipliersOrPenaltyParameters(self, consnorm, convals):
@@ -330,17 +339,25 @@ class AugmentedLagrangianFramework(object):
         # Convergence check
         converged = Pmax <= self.omega_opt and max_cons <= self.eta_opt
 
+
+        # Print out header and initial log.
+        if self.verbose:
+            self.log.info(self.hline)
+            self.log.info(self.header)
+            self.log.info(self.hline)
+            self.log.info(self.format0 % (self.iter, self.f,
+                                             self.pg0, '', max_cons,
+                                             '', self.rho,''))
         # While not converged, loop
         while not converged and self.iter < self.maxouter:
 
             self.iter += 1
 
-            if self.printlevel>=1:
-                print 'Major iteration : ', self.iter
-                print 'Penalty parameter : %6.3e'%self.rho
-                print 'Required Projected gradient norm = %6.3e'%self.omega
-                print 'Required constraint         norm = %6.3e'%self.eta
-                print  '\n'
+#            if self.verbose:
+#                self.log.debug('Major iteration : %5d'%self.iter)
+#                self.log.debug('Penalty parameter : %6.3e'%self.rho)
+#                self.log.debug('Required Projected gradient norm = %6.3e'%self.omega)
+#                self.log.debug('Required constraint         norm = %6.3e \n'%self.eta)
 
             # Perform bound-constrained minimization
             #tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
@@ -349,7 +366,7 @@ class AugmentedLagrangianFramework(object):
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
                                         maxiter = 250,
-                                        verbose=self.sbmin_verbose,
+                                        verbose=True,
                                         magic_steps=self.magic_steps)
 
             SBMIN.Solve(rho_pen=self.rho,slack_index=original_n)
@@ -371,7 +388,18 @@ class AugmentedLagrangianFramework(object):
             self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.pgnorm = Pmax_new
 
-            if self.printlevel>=1:
+            # Print out header, say, every 20 iterations
+            if self.iter % 20 == 0 and self.verbose:
+                self.log.info(self.hline)
+                self.log.info(self.header)
+                self.log.info(self.hline)
+
+            if self.verbose:
+                self.log.info(self.format % (self.iter, self.f,
+                          self.pgnorm, self.omega , max_cons_new,
+                          self.eta, self.rho, SBMIN.iter))
+
+            if False:#self.printlevel>=1:
                 print ''
                 print 'Objective function value  =  %e'%self.f
                 print 'Penalty parameter         =  %6.4e'%self.rho
@@ -405,8 +433,8 @@ class AugmentedLagrangianFramework(object):
                         print '\n Current point could not be improved, exiting ... \n'
                         break
                 # end if
-                if self.printlevel>=1:
-                    print '\n******  Updating multipliers estimates  ******\n'
+                if self.verbose:#self.printlevel>=1:
+                    self.log.debug('******  Updating multipliers estimates  ******\n')
             else:
                 # Increase rho, reset tolerances based on new rho
                 self.UpdateMultipliersOrPenaltyParameters(max_cons_new,
@@ -414,10 +442,9 @@ class AugmentedLagrangianFramework(object):
                 self.eta = self.eta0*self.rho**-self.a_eta
                 self.omega = self.omega0*self.rho**-self.a_omega
 
-                if self.printlevel>=1:
-                    print '\n******  Keeping current multipliers estimates  ******\n'
+                if self.verbose:#self.printlevel>=1:
+                    self.log.debug('******  Keeping current multipliers estimates  ******\n')
             # end if
-            #print 'lambda/rho:', numpy.max(numpy.abs(self.pi))/self.rho
 
             # Safeguard: tightest tolerance should be near optimality to prevent excessive
             # inner loop iterations at the end of the algorithm
