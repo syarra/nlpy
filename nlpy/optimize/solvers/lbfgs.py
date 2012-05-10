@@ -3,6 +3,7 @@ from nlpy.tools import norms
 from nlpy.tools.timing import cputime
 import numpy
 import numpy.linalg
+import logging
 import sys
 
 __docformat__ = 'restructuredtext'
@@ -167,6 +168,12 @@ class LBFGS(InverseLBFGS):
 
     def __init__(self, n, npairs=5, **kwargs):
         InverseLBFGS.__init__(self, n, npairs, **kwargs)
+
+        # Setup the logger. Install a NullHandler if no output needed.                                   
+        logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
+        self.log = logging.getLogger(logger_name)
+        #self.log.addHandler(logging.NullHandler())
+        self.log.info('Logger created')
 
     def matvec(self, v):
         """
