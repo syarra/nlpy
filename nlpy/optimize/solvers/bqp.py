@@ -335,10 +335,11 @@ class BQP(object):
         # Compute stopping tolerance.
         g = qp.grad(x)
         gNorm = np.linalg.norm(g)
-        stoptol = self.stoptol * gNorm
+        # stoptol = self.stoptol * gNorm
 
         pg = self.pgrad(x, g=g, active_set=(lower,upper))
         pgNorm = np.linalg.norm(pg)
+        stoptol = self.stoptol * pgNorm
         #print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
 
         exitOptimal = exitIter = False
