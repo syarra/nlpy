@@ -143,15 +143,21 @@ sbminlogger.setLevel(logging.DEBUG)
 sbminlogger.addHandler(hndlr)
 sbminlogger.propagate = False
 
-# Configure sbmin logger.
-#bqplogger = logging.getLogger('nlpy.bqp')
-#bqplogger.setLevel(logging.INFO)
-#bqplogger.addHandler(hndlr)
-#bqplogger.propagate = False
+# Configure bqp logger.
+bqplogger = logging.getLogger('nlpy.bqp')
+bqplogger.setLevel(logging.INFO)
+bqplogger.addHandler(hndlr)
+bqplogger.propagate = False
 
-solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, magic_steps=False, printlevel=2, logger='essai', verbose=True)
+# Configure lbfgs logger.
+lbfgslogger = logging.getLogger('nlpy.lbfgs')
+lbfgslogger.setLevel(logging.INFO)
+lbfgslogger.addHandler(hndlr)
+lbfgslogger.propagate = False
+
+#solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, magic_steps=False, printlevel=2, logger='essai', verbose=True)
 t0 = time.time()
-#solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, magic_steps=False, printlevel=2)
+solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, magic_steps=False, printlevel=2)
 
 solver.solve()
 
