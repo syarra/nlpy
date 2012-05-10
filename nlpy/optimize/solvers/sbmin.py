@@ -132,6 +132,7 @@ class SBMINFramework:
         nlp = self.nlp
 
         # Gather initial information.
+        self.x = self.x0.copy()
         if self.f0 is None:
             self.f0 = self.nlp.obj(self.x)
 
