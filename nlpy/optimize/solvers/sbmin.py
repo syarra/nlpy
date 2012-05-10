@@ -70,12 +70,11 @@ class SBMINFramework:
         self.g0     = None
         self.tsolve = 0.0
 
-        # print 'Initial Projected Gradient Norm = %6.4e'%self.projected_gradient(self.x,self.g_old)
-        # print self.x, self.f
-        # print self.g_old
-        # print kwargs['g0']
-        # print kwargs['x0']
-        
+        # Options for Nocedal-Yuan backtracking
+        self.ny      = kwargs.get('ny', True)
+        self.nbk     = kwargs.get('nbk', 5)
+        self.alpha   = 1.0
+
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
         self.magic_steps = kwargs.get('magic_steps',False)
@@ -84,7 +83,7 @@ class SBMINFramework:
         self.total_bqpiter = 0
 
         self.hformat = '%-5s  %8s  %7s  %5s  %8s  %8s  %4s'
-        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','cg','rho','Radius','Stat')
+        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','bqp','rho','Radius','Stat')
         self.hlen   = len(self.header)
         self.hline  = '     '+'-' * self.hlen
         self.format = '     %-5d  %8.2e  %7.1e  %5d  %8.1e  %8.1e  %4s'
@@ -146,6 +145,7 @@ class SBMINFramework:
 
         # Reset initial trust-region radius.
         self.TR.Delta = 0.1 * self.pgnorm#norms.norm2(self.g) #2.
+        # self.TR.Delta = 0.2
 
         self.radii = [ self.TR.Delta ]
 
@@ -170,6 +170,8 @@ class SBMINFramework:
 
             self.iter += 1
 
+            alpha = self.alpha
+
             # Save current gradient for LBFGS needs
             if self.save_g:
                 self.g_old = self.g.copy()
@@ -184,6 +186,9 @@ class SBMINFramework:
             #print 'QP Uvar :', qp.Uvar
 
 
+            # self.solver = self.TrSolver(qp, qp.obj)
+            # self.solver.Solve(reltol=reltol)
+
             self.solver = self.TrSolver(qp, qp.grad)
             self.solver.Solve()
 
@@ -195,17 +200,21 @@ class SBMINFramework:
             m = self.solver.m
             if m is None:
                 m = numpy.dot(self.g, step) + 0.5*numpy.dot(step, H * step)
-            # print 'm = ',m
 
             self.total_bqpiter += bqpiter
-            # print 'x = ',self.x
-            # print 'step = ',step
             x_trial = self.x + step
-            # print 'x_trial = ',x_trial
             f_trial = nlp.obj(x_trial)
-            # print 'f_trial = ',f_trial
-            # print 'f = ',self.f
-            # print 'real f = ',nlp.obj(self.x)
+
+            # Aggressive magical steps go here - need a redefinition of f, f_trial, and m
+            # if self.magic_steps == True:
+            #     slack_index = kwargs.get('slack_index',self.nlp.n)
+            #     penalty_rho = kwargs.get('rho_pen',1.)
+            #     m_step = -self.g[slack_index:] / penalty_rho
+            #     x_trial[slack_index:] += m_step
+            #     x_trial[slack_index:] = numpy.where(x_trial[slack_index:] < 0., 0., x_trial[slack_index:])
+            #     f_trial_inter = f_trial
+            #     f_trial = nlp.obj(x_trial)
+            #     m = m - f_trial_inter + f_trial
 
             rho  = self.TR.Rho(self.f, f_trial, m)
             step_status = 'Rej'
@@ -216,7 +225,7 @@ class SBMINFramework:
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
 
-               # (conservative) magical steps go here
+                # (conservative) magical steps go here
                 if self.magic_steps == True:
                     slack_index = kwargs.get('slack_index',self.nlp.n)
                     penalty_rho = kwargs.get('rho_pen',1.)
@@ -226,6 +235,7 @@ class SBMINFramework:
                 # end if
 
                 self.f = nlp.obj(self.x)
+                # self.f = f_trial # For aggressive magical steps only
                 self.g = nlp.grad(self.x)
                 self.pgnorm = numpy.max(numpy.abs( \
                                         self.projected_gradient(self.x,self.g)))
@@ -233,13 +243,31 @@ class SBMINFramework:
 
             else:
                 # Trust-region step is unsuccessfull.
-                self.TR.UpdateRadius(rho, stepnorm)
+
+                if self.ny: # Backtracking linesearch following "Nocedal & Yuan"
+                    slope = numpy.dot(self.g, step)
+                    bk = 0
+                    while bk < self.nbk and \
+                            f_trial >= self.f + 1.0e-4 * alpha * slope:
+                        bk = bk + 1
+                        alpha /= 1.5
+                        x_trial = self.x + alpha * step
+                        f_trial = nlp.obj(x_trial)
+                    self.x = x_trial
+                    self.f = f_trial
+                    self.g = nlp.grad(self.x)
+                    self.pgnorm = numpy.max(numpy.abs( \
+                                        self.projected_gradient(self.x,self.g)))
+                    self.TR.Delta = alpha * stepnorm
+                    step_status = 'N-Y'
+                else:
+                    self.TR.UpdateRadius(rho, stepnorm)
 
             self.step_status = step_status
             self.radii.append(self.TR.Delta)
             status = ''
             try:
-                self.PostIteration()
+                self.PostIteration(f_trial=f_trial,m=m)
             except UserExitRequest:
                 status = 'usr'
 
@@ -289,6 +317,7 @@ class SBMINLbfgsFramework(SBMINFramework):
 
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
         self.save_g = True
+        self.try_restart = True
 
     def PostIteration(self, **kwargs):
         """
@@ -301,6 +330,26 @@ class SBMINLbfgsFramework(SBMINFramework):
             s = self.solver.step
             y = self.g - self.g_old
             self.nlp.hupdate(s, y)
+        # else:
+        #     m = kwargs.get('m',None)
+        #     f_trial = kwargs.get('f_trial',self.f)
+        #     print "m = ",m
+        #     print "f = %.16f"%self.f
+        #     print "f_trial = %.16f"%f_trial
+        #     print "f - f_trial = ",self.f - f_trial
+        #     print "ared/pred = ",(self.f - f_trial)/-m
+        #     print "trust region eps = ",self.TR.eps
+        #     print "conditioned ared/pred = ",(self.f - f_trial + 10.0*self.TR.eps)/(-m + 10.0*self.TR.eps)
+
+        #     print "Checking trust region ... "
+        #     TRcollapse = self.TR.Delta <= 100.0 * self.TR.eps
+        #     if TRcollapse and self.try_restart:
+        #         self.nlp.hrestart()
+        #         print "Trust Region collapse detected, attempting Hessian restart ... "
+        #         print "x = ",self.x
+        #         print "grad = ",self.g
+        #         self.try_restart = False
+        #     # end if
 
 
 
@@ -408,4 +457,4 @@ class TrustBQPModel(NLPModel):
         #     self._last_obj = None  # Objective function out of date
         #     self._last_grad_obj = None  # Gradient out of date
 
-        return self.nlp.hprod(self.x_k, pi, p)
+        return self.nlp.hprod(self.x_k, None, p)
