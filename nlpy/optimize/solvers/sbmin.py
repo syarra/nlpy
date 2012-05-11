@@ -349,7 +349,7 @@ class SBMINLbfgsFramework(SBMINFramework):
         if all the memory has been used.
         """
         # LBFGS approximation should only update on *successful* iterations
-        if self.step_status != 'Rej':
+        if self.step_status == 'Acc':
             s = self.step
             y = self.g - self.g_old
             self.nlp.hupdate(s, y)
