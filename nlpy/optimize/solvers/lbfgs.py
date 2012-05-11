@@ -87,8 +87,6 @@ class InverseLBFGS:
             self.ys[insert] = ys
             self.insert += 1
             self.insert = self.insert % self.npairs
-        else:
-            print "Not accepting LBFGS update: ys = ",ys
         return
 
     def restart(self):
@@ -241,6 +239,13 @@ class LBFGS(InverseLBFGS):
             r -= b[i+paircount]*y[:,k]            
 
         return r
+
+    def store(self, new_s, new_y):
+        InverseLBFGS.store(self,new_s,new_y)
+        ys = numpy.dot(new_s, new_y)
+        if ys < self.accept_threshold:
+            self.log.debug('Not accepting LBFGS update: ys = %g' % ys)
+        return
 
 
 class LBFGSFramework:

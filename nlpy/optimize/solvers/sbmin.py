@@ -204,6 +204,9 @@ class SBMINFramework:
             # self.solver = self.TrSolver(qp, qp.obj)
             # self.solver.Solve(reltol=reltol)
 
+            # if self.iter == 17:
+            #     pdb.set_trace()
+
             self.solver = self.TrSolver(qp, qp.grad)
             self.solver.Solve()
 
@@ -241,7 +244,9 @@ class SBMINFramework:
 
                 # Trust-region step is succesfull.
                 self.TR.UpdateRadius(rho, stepnorm)
+                self.x_old = self.x.copy()
                 self.x = x_trial.copy()
+                self.step = step.copy()
 
                 # (conservative) magical steps go here
                 if self.magic_steps == True:
@@ -250,6 +255,7 @@ class SBMINFramework:
                     m_step = -self.g[slack_index:] / penalty_rho
                     self.x[slack_index:] += m_step
                     self.x[slack_index:] = numpy.where(self.x[slack_index:] < 0., 0., self.x[slack_index:])
+                    self.step = self.x - self.x_old
                 # end if
 
                 self.f = nlp.obj(self.x)
@@ -285,7 +291,7 @@ class SBMINFramework:
             self.radii.append(self.TR.Delta)
             status = ''
             try:
-                self.PostIteration(f_trial=f_trial,m=m)
+                self.PostIteration()
             except UserExitRequest:
                 status = 'usr'
 
@@ -344,29 +350,9 @@ class SBMINLbfgsFramework(SBMINFramework):
         """
         # LBFGS approximation should only update on *successful* iterations
         if self.step_status != 'Rej':
-            s = self.solver.step
+            s = self.step
             y = self.g - self.g_old
             self.nlp.hupdate(s, y)
-        # else:
-        #     m = kwargs.get('m',None)
-        #     f_trial = kwargs.get('f_trial',self.f)
-        #     print "m = ",m
-        #     print "f = %.16f"%self.f
-        #     print "f_trial = %.16f"%f_trial
-        #     print "f - f_trial = ",self.f - f_trial
-        #     print "ared/pred = ",(self.f - f_trial)/-m
-        #     print "trust region eps = ",self.TR.eps
-        #     print "conditioned ared/pred = ",(self.f - f_trial + 10.0*self.TR.eps)/(-m + 10.0*self.TR.eps)
-
-        #     print "Checking trust region ... "
-        #     TRcollapse = self.TR.Delta <= 100.0 * self.TR.eps
-        #     if TRcollapse and self.try_restart:
-        #         self.nlp.hrestart()
-        #         print "Trust Region collapse detected, attempting Hessian restart ... "
-        #         print "x = ",self.x
-        #         print "grad = ",self.g
-        #         self.try_restart = False
-        #     # end if
 
 
 class TrustBQPModel(NLPModel):

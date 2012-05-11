@@ -305,7 +305,10 @@ class BQP(object):
                 alowmin = np.min(alowp)
             else: alowmin = np.infty
             alpha = np.minimum(alowmin, aupmin)
+            # try:
             x += alpha*d
+            # except:
+            #     pdb.set_trace()
 
         # Do another projected gradient
         (x, (lower,upper)) = self.projected_gradient(x)
@@ -319,7 +322,7 @@ class BQP(object):
         qp = self.qp
         n = qp.n
         maxiter = kwargs.get('maxiter', 10*n)
-        self.stoptol = kwargs.get('stoptol', 1.0e-2)
+        self.stoptol = kwargs.get('stoptol', 1.0e-5)
 
         # Compute initial data.
         x = self.project(qp.x0)
@@ -403,7 +406,7 @@ class BQP(object):
             d = np.zeros(n)
             d[free_vars] = cg.step
 
-            if cg.infDescent:
+            if cg.infDescent and cg.step.size != 0:
                 self.log.debug('iter :', iter,
                         '  Negative curvature detected (%d its)' % cg.niter)
 
@@ -438,7 +441,9 @@ class BQP(object):
                 d = np.zeros(n)
                 d[free_vars] = cg.step
 
-                if cg.infDescent:
+                if cg.infDescent and cg.step.size != 0:
+                    self.log.debug('iter :', iter,
+                            '  Negative curvature detected (%d its)' % cg.niter)
                     (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
                 else:
                     # 4. Update x using projected linesearch with initial step=1.
