@@ -245,17 +245,14 @@ class AugmentedLagrangianFramework(object):
 
         self.alprob = AugmentedLagrangian(nlp,**kwargs)
         self.x = kwargs.get('x0', self.alprob.x0.copy())
-        self.pi0 = kwargs.get('pi0', np.zeros(self.alprob.nlp.m))
+
         self.innerSolver = innerSolver
+
         self.phi0 = None
         self.dphi0 = None
         self.dphi0norm = None
-        self.alprob.pi0 = self.pi0
-        self.alprob.rho = kwargs.get('rho_init',np.array(10.))
-        self.alprob.rho_init = kwargs.get('rho_init',np.array(10.))
-        self.rho = self.alprob.rho
-        self.pi = self.alprob.pi
-        self.tau =kwargs.get('tau', 0.1)
+
+        self.tau = kwargs.get('tau', 0.1)
         self.omega = None
         self.eta = None
         self.eta0 = 0.1258925
@@ -268,15 +265,15 @@ class AugmentedLagrangianFramework(object):
         self.b_eta = kwargs.get('b_eta',0.9)
         self.omega_opt = kwargs.get('omega_opt',1.e-7)
         self.eta_opt = kwargs.get('eta_opt',1.e-7)
-        self.magic_steps = kwargs.get('magic_steps',False)
-        self.ny = kwargs.get('ny',True)
-
+        
         self.f0 = None
         self.f = +np.infty
 
-        # Maximum number of outer iterations (use maxiter or maxinner for TR)
+        # Maximum number of outer iterations (use 'maxiter' or 'maxinner' keyword for TR)
         self.maxouter = kwargs.get('maxouter', 10*self.alprob.nlp.original_n)
-        self.printlevel = kwargs.get('printlevel', 1)
+
+        self.inner_fail_count = 0
+        self.status = None
 
         self.verbose = kwargs.get('verbose', True)
         self.hformat = '%-5s  %8s  %8s  %8s  %8s  %8s  %8s  %8s'
@@ -293,23 +290,42 @@ class AugmentedLagrangianFramework(object):
             self.log.propagate=False
 
 
-    def UpdateMultipliersOrPenaltyParameters(self, consnorm, convals):
+    def UpdateMultipliers(self, convals, status):
 
-        if consnorm <= np.maximum(self.eta, self.eta_opt):
-            # No change in rho, update multipliers, tighten tolerances
-            self.pi -= self.rho*convals
+        '''
+        Infeasibility is sufficiently small; update multipliers and 
+        tighten feasibility and optimality tolerances
+        '''
+        self.alprob.pi -= self.alprob.rho*convals
+        if status == 'opt':
+            # Safeguard: tighten tolerances only if desired optimality 
+            # is reached to prevent rapid decay of the tolerances from failed 
+            # inner loops
+            self.eta /= self.alprob.rho**self.b_eta
+            self.omega /= self.alprob.rho**self.b_omega
+            self.inner_fail_count = 0
         else:
-            # Increase rho, reset tolerances based on new rho
-            self.rho /= self.tau
+            self.inner_fail_count += 1
+        # end if
+        return
+
+
+    def UpdatePenaltyParameter(self):
+
+        '''
+        Large infeasibility; increase rho and reset tolerances 
+        based on new rho.
+        '''
+        self.alprob.rho /= self.tau
+        self.eta = self.eta0*self.alprob.rho**-self.a_eta
+        self.omega = self.omega0*self.alprob.rho**-self.a_omega
+        return
 
 
     def solve(self, **kwargs):
 
         '''
         Solve the optimization problem and return the solution.
-
-        Currently, only equality constraints are supported in the optimization
-        problem formulation.
         '''
 
         original_n = self.alprob.nlp.original_n
@@ -322,8 +338,8 @@ class AugmentedLagrangianFramework(object):
         Pdphi = self.alprob.project_gradient(self.x,dphi)
         Pmax = np.max(np.abs(Pdphi))
 
-        # In case the original problem doesn't have constraint
-        # perform a sbmin minimization with given tolerances
+        # In case the original problem doesn't have constraints,
+        # perform an sbmin minimization with given tolerances
         if self.alprob.nlp.m == 0:
             max_cons = 0
             self.omega = self.omega_opt
@@ -347,7 +363,7 @@ class AugmentedLagrangianFramework(object):
         self.log.info(self.hline)
         self.log.info(self.format0 % (self.iter, self.f,
                                              self.pg0, '', max_cons,
-                                             '', self.rho,''))
+                                             '', self.alprob.rho,''))
         # While not converged, loop
         while not converged and self.iter < self.maxouter:
 
@@ -379,25 +395,15 @@ class AugmentedLagrangianFramework(object):
             self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.pgnorm = Pmax_new
 
-            # Print out header, say, every 20 iterations
-            if self.iter % 20 == 0:
+            # Print out header, say, every iteration (for readability)
+            if self.iter % 1 == 0:
                 self.log.info(self.hline)
                 self.log.info(self.header)
                 self.log.info(self.hline)
 
             self.log.info(self.format % (self.iter, self.f,
                           self.pgnorm, self.omega , max_cons_new,
-                          self.eta, self.rho, SBMIN.iter))
-
-            if False:#self.printlevel>=1:
-                print ''
-                print 'Objective function value  =  %e'%self.f
-                print 'Penalty parameter         =  %6.4e'%self.rho
-                print 'Projected gradient norm   =  %6.4e'%Pmax_new, \
-                      ' Required gradient   norm =  %6.4e'%self.omega
-                print 'Constraint         norm   =  %6.4e'%max_cons_new, \
-                      ' Required constraint norm =  %6.4e'%self.eta
-
+                          self.eta, self.alprob.rho, SBMIN.iter))
 
             # Update penalty parameter or multipliers based on result
             if max_cons_new <= np.maximum(self.eta, self.eta_opt):
@@ -406,32 +412,23 @@ class AugmentedLagrangianFramework(object):
                 if max_cons_new <= self.eta_opt and Pmax_new <= self.omega_opt:
                     converged = True
                     break
-                # No change in rho, update multipliers, tighten tolerances
-                self.UpdateMultipliersOrPenaltyParameters(max_cons_new,
-                                                         convals_new)
 
-                if SBMIN.status == 'opt':
-                    # Safeguard: tighten tolerances only if desired optimality 
-                    # is reached to prevent rapid decay of tolerances from failed
-                    # inner loops
-                    self.eta /= self.rho**self.b_eta
-                    self.omega /= self.rho**self.b_omega
-                    self.inner_fail_count = 0
-                else:
-                    self.inner_fail_count += 1
-                    if self.inner_fail_count == 10 and self.printlevel >= 1:
-                        print '\n Current point could not be improved, exiting ... \n'
-                        break
-                # end if
+                self.UpdateMultipliers(convals_new,SBMIN.status)
+
+                # If optimality of the inner loop is not achieved within 10 
+                # major iterations, exit immediately
+                if self.inner_fail_count == 10:
+                    self.status = 'Infeas'
+                    self.log.debug('Current point could not be improved, exiting ... \n')
+                    break
+
                 self.log.debug('******  Updating multipliers estimates  ******\n')
-            else:
-                # Increase rho, reset tolerances based on new rho
-                self.UpdateMultipliersOrPenaltyParameters(max_cons_new,
-                                                         convals_new)
-                self.eta = self.eta0*self.rho**-self.a_eta
-                self.omega = self.omega0*self.rho**-self.a_omega
 
+            else:
+
+                self.UpdatePenaltyParameter()
                 self.log.debug('******  Keeping current multipliers estimates  ******\n')
+
             # end if
 
             # Safeguard: tightest tolerance should be near optimality to prevent excessive
@@ -446,16 +443,18 @@ class AugmentedLagrangianFramework(object):
         # Solution output, etc.
         if converged:
             self.status = 'Opt'
-        else:
+            self.log.debug('Optimal solution found \n')
+        elif not converged and self.status is None:
             self.status = 'Iter'
+            self.log.debug('Maximum number of iterations reached \n')
 
-        if self.printlevel>=1:
-            print 'f = ',self.f
-            if self.alprob.nlp.m != 0:
-                print 'pi_max = ',np.max(self.pi)
-                print 'max infeas. = ',max_cons_new
+        self.log.info('f = %12.8g' % self.f)
+        if self.alprob.nlp.m != 0:
+            self.log.info('pi_max = %12.8g' % np.max(self.alprob.pi))
+            self.log.info('max infeas. = %12.8g' % max_cons_new)
 
     # end def
+
 # end class
 
 
@@ -465,8 +464,3 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
         self.alprob = AugmentedLagrangianLbfgs(nlp)
-        self.alprob.pi0 = self.pi0
-        self.alprob.rho = kwargs.get('rho_init',np.array(10.))
-        self.alprob.rho_init = kwargs.get('rho_init',np.array(10.))
-        self.rho = self.alprob.rho
-        self.pi = self.alprob.pi
