@@ -32,6 +32,7 @@ from nlpy.model.mfnlp import MFModel
 from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianLbfgsFramework, AugmentedLagrangianFramework
 from nlpy.optimize.solvers.sbmin import SBMINLbfgsFramework, SBMINFramework
 from nlpy.tools.logs import config_logger
+
 # =============================================================================
 # Functions for defining the minimization problem
 # =============================================================================
@@ -47,8 +48,8 @@ def obj(x):
 def cons(x):
 
 	c = numpy.zeros(2,'d')
-	c[0] = (x[0] - 5.)**2 + (x[1] - 5.)**2 - 100.
-	c[1] = -(x[1] - 5.)**2 - (x[0] - 6.)**2 + 82.81
+	c[0] = (x[0] - 5.)**2 + (x[1] - 5.)**2
+	c[1] = (x[1] - 5.)**2 + (x[0] - 6.)**2
 	return c
 
 # end def
@@ -68,8 +69,8 @@ def jac(x):
 	J = numpy.zeros([2,2],'d')
 	J[0,0] = 2*(x[0] - 5.)
 	J[0,1] = 2*(x[1] - 5.)
-	J[1,0] = -2*(x[0] - 6.)
-	J[1,1] = -2*(x[1] - 5.)
+	J[1,0] = 2*(x[0] - 6.)
+	J[1,1] = 2*(x[1] - 5.)
 	#print J
 	return J
 
@@ -79,29 +80,32 @@ def jprod(x,q):
 
 	p = numpy.zeros(2,'d')
 	p[0] = q[0]*(2.*(x[0] - 5.)) + q[1]*(2.*(x[1] - 5.))
-	p[1] = q[0]*(-2.*(x[0] - 6.)) + q[1]*(-2.*(x[1] - 5.))
+	p[1] = q[0]*(2.*(x[0] - 6.)) + q[1]*(2.*(x[1] - 5.))
 	return p
 
 
 def jtprod(x,q):
 
 	p = numpy.zeros(2,'d')
-	p[0] = q[0]*(2*(x[0] - 5.)) + q[1]*(-2*(x[0] - 6.))
-	p[1] = q[0]*(2*(x[1] - 5.)) + q[1]*(-2*(x[1] - 5.))
+	p[0] = q[0]*(2*(x[0] - 5.)) + q[1]*(2*(x[0] - 6.))
+	p[1] = q[0]*(2*(x[1] - 5.)) + q[1]*(2*(x[1] - 5.))
 	return p
 
 # end def
 
-def hprod(x,u,v):
+def hprod(x,u,v, **kwargs):
+    if u==None:
+        u=numpy.zeros(2)
+
     p = numpy.zeros(2,'d')
-    p[0] = v[0]*6*(x[0]-10.)
-    p[1] = v[1]*6*(x[1]-20.)
+    p[0] = obj_weight*v[0]*6*(x[0]-10.)
+    p[1] = obj_weight*v[1]*6*(x[1]-20.)
 
-    p[0] -= 2.*u[0]*v[0]
-    p[1] -= 2.*u[0]*v[1]
+    p[0] += 2.*u[0]*v[0]
+    p[1] += 2.*u[0]*v[1]
 
-    p[0] -= -2.*u[1]*v[0]
-    p[1] -= -2.*u[1]*v[1]
+    p[0] += 2.*u[1]*v[0]
+    p[1] += 2.*u[1]*v[1]
 
     return p
 
@@ -112,12 +116,13 @@ def hprod(x,u,v):
 n = 2
 m = 2
 x0 = numpy.array([20.1,5.84])
-Lcon = numpy.zeros(2,'d')
+Lcon = numpy.array([100,-numpy.infty])
+Ucon = numpy.array([numpy.infty,82.81])
 Lvar = numpy.array([13.,0.])
 Uvar = 100.*numpy.ones(2,'d')
 
 #prob = NLPModel(n=n,m=m,name='HS019',x0=x0,Lcon=Lcon,Lvar=Lvar,Uvar=Uvar)
-prob = MFModel(n=n,m=m,name='HS019',x0=x0,Lcon=Lcon,Lvar=Lvar,Uvar=Uvar)
+prob = MFModel(n=n,m=m,name='HS019',x0=x0,Lcon=Lcon,Ucon=Ucon,Lvar=Lvar,Uvar=Uvar)
 prob.obj = obj
 prob.cons = cons
 prob.grad = grad
@@ -144,10 +149,10 @@ sbminlogger.addHandler(hndlr)
 sbminlogger.propagate = False
 
 # Configure bqp logger.
-bqplogger = logging.getLogger('nlpy.bqp')
-bqplogger.setLevel(logging.INFO)
-bqplogger.addHandler(hndlr)
-bqplogger.propagate = False
+#bqplogger = logging.getLogger('nlpy.bqp')
+#bqplogger.setLevel(logging.INFO)
+#bqplogger.addHandler(hndlr)
+#bqplogger.propagate = False
 
 # Configure lbfgs logger.
 lbfgslogger = logging.getLogger('nlpy.lbfgs')
@@ -155,12 +160,12 @@ lbfgslogger.setLevel(logging.INFO)
 lbfgslogger.addHandler(hndlr)
 lbfgslogger.propagate = False
 
-#solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, magic_steps=False, printlevel=2, logger='essai', verbose=True)
+solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, magic_steps=False, printlevel=2, logger='essai', verbose=True, ny=False)
 t0 = time.time()
-solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, magic_steps=False, printlevel=2, ny=False)
+#solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, magic_steps=False, printlevel=2, ny=True)
 
 solver.solve()
 
-print 'Solved in %8.3f seconds.'%(time.time() - t0)
+print 'Solved in %8.3f seconds, with objective function %15.7e'%(time.time() - t0, solver.f)
 print ' in %d' % solver.niter_total
 

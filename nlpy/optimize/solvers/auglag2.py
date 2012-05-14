@@ -131,12 +131,11 @@ class AugmentedLagrangian(NLPModel):
         pi_bar[rangeC] -= self.pi[om:].copy()
 
         cons = nlp.cons(x)
-        mu = cons[:om].copy()
+        mu = cons.copy()#[:om].copy()
         mu[upperC] *= -1.0
         mu[rangeC] -= cons[om:].copy()
 
-        w[:on] = nlp.hprod(x[:on],pi_bar - self.rho * mu, v[:on])
-
+        w[:on] = nlp.hprod(x[:on],-pi_bar + self.rho * mu, v[:on])
         J = nlp.jac(x)
         w += self.rho * (J.T * (J * v))
 
@@ -460,7 +459,6 @@ class AugmentedLagrangianFramework(object):
             self.status = 'Iter'
 
         if self.printlevel>=1:
-            print 'f = ',self.f
             if self.alprob.nlp.m != 0:
                 print 'pi_max = ',numpy.max(self.pi)
                 print 'max infeas. = ',max_cons_new
