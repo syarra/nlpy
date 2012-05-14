@@ -127,6 +127,7 @@ prob.jtprod = jtprod
 prob.hprod = hprod
 
 fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
+# hndlr = logging.FileHandler('hs019_2d_ms.log',mode='w')
 hndlr = logging.StreamHandler()
 hndlr.setLevel(logging.DEBUG)
 hndlr.setFormatter(fmt)
@@ -144,20 +145,20 @@ sbminlogger.addHandler(hndlr)
 sbminlogger.propagate = False
 
 # Configure bqp logger.
-bqplogger = logging.getLogger('nlpy.bqp')
-bqplogger.setLevel(logging.INFO)
-bqplogger.addHandler(hndlr)
-bqplogger.propagate = False
+# bqplogger = logging.getLogger('nlpy.bqp')
+# bqplogger.setLevel(logging.INFO)
+# bqplogger.addHandler(hndlr)
+# bqplogger.propagate = False
 
 # Configure lbfgs logger.
-lbfgslogger = logging.getLogger('nlpy.lbfgs')
-lbfgslogger.setLevel(logging.INFO)
-lbfgslogger.addHandler(hndlr)
-lbfgslogger.propagate = False
+# lbfgslogger = logging.getLogger('nlpy.lbfgs')
+# lbfgslogger.setLevel(logging.INFO)
+# lbfgslogger.addHandler(hndlr)
+# lbfgslogger.propagate = False
 
-#solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, magic_steps=False, printlevel=2, logger='essai', verbose=True)
 t0 = time.time()
-solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, magic_steps=False, printlevel=2, ny=False)
+solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, printlevel=2, logger='essai', verbose=True)
+# solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, printlevel=2)
 
 solver.solve()
 

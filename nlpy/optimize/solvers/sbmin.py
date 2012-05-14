@@ -66,24 +66,15 @@ class SBMINFramework:
         self.x0      = kwargs.get('x0', self.nlp.x0.copy())
         self.x = None
         self.f      = None
-        # self.f0     = kwargs.get('f0', self.nlp.obj(self.x))
         self.f0     = kwargs.get('f0',None)
         self.g      = None
-        # self.g_old  = kwargs.get('g0', self.nlp.grad(self.x))
         self.g_old  = kwargs.get('g0',None)
         self.save_g = False              # For methods that need g_{k-1} and g_k
         self.pgnorm  = None
-        self.g0     = None
         self.tsolve = 0.0
-
-        # Options for Nocedal-Yuan backtracking
-        self.ny      = kwargs.get('ny', True)
-        self.nbk     = kwargs.get('nbk', 5)
-        self.alpha   = 1.0
 
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
-        self.magic_steps = kwargs.get('magic_steps',False)
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
 
@@ -101,12 +92,14 @@ class SBMINFramework:
         if not self.verbose:
             self.log.propagate=False
 
+
     def hprod(self, v, **kwargs):
         """
         Default hprod based on nlp's hprod. User should overload to
         provide a custom routine, e.g., a quasi-Newton approximation.
         """
         return self.nlp.hprod(self.x, self.nlp.pi0, v)
+
 
     def projected_gradient(self, x, g):
         """
@@ -120,12 +113,14 @@ class SBMINFramework:
 
         return q
 
+
     def PostIteration(self, **kwargs):
         """
         Override this method to perform work at the end of an iteration. For
         example, use this method for updating a LBFGS Hessian
         """
         return None
+
 
     def Solve(self, **kwargs):
 
@@ -143,9 +138,6 @@ class SBMINFramework:
         self.g        = self.g_old
         self.pgnorm = numpy.max(numpy.abs( \
                                 self.projected_gradient(self.x,self.g)))
-        # print 'Initial Projected Gradient Norm = %6.4e'%self.pgnorm
-        # print self.x, self.f
-        # print self.g
         self.pg0 = self.pgnorm
 
         # Reset initial trust-region radius.
@@ -173,8 +165,6 @@ class SBMINFramework:
 
             self.iter += 1
 
-            alpha = self.alpha
-
             # Save current gradient for LBFGS needs
             if self.save_g:
                 self.g_old = self.g.copy()
@@ -183,38 +173,14 @@ class SBMINFramework:
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
 
-            #H = SimpleLinearOperator(nlp.n,nlp.n, symmetric=True,
-            #    matvec = lambda u: nlp.hprod(self.x, [], u))
-            #print 'sbmin   : x', self.x
-
-            #print 'sbmin   : gradient', self.g
-            #print 'g: ', nlp.grad(self.x)
-            #print 'sbmin   : hessian', FormEntireMatrix(nlp.n,nlp.n, H)
-            #print 'delta:', self.TR.Delta
-            #print 'x: %.15f, %.15f, %.15f, %.15f' %(self.x[0], self.x[1], self.x[2], self.x[3])
-            #print 'pi: %.15f, %.15f' %(nlp.pi[0],nlp.pi[1])
-            #print 'rho: %.15f' % nlp.rho
-
             qp = TrustBQPModel(nlp, self.x.copy(), self.TR.Delta, g_k=self.g)
-
-            #print 'QP Lvar :', qp.Lvar
-            #print 'QP Uvar :', qp.Uvar
-
-
-            # self.solver = self.TrSolver(qp, qp.obj)
-            # self.solver.Solve(reltol=reltol)
-
-            # if self.iter == 17:
-            #     pdb.set_trace()
 
             self.solver = self.TrSolver(qp, qp.grad)
             self.solver.Solve()
 
             step = self.solver.step
-            #print 'step:', step
             stepnorm = self.solver.stepNorm
             bqpiter = self.solver.niter
-            #print 'stepnorm:', stepnorm
 
             # Obtain model value at next candidate
             m = self.solver.m
@@ -226,66 +192,24 @@ class SBMINFramework:
             x_trial = self.x.copy() + step
             f_trial = nlp.obj(x_trial)
 
-            # Aggressive magical steps go here - need a redefinition of f, f_trial, and m
-            # if self.magic_steps == True:
-            #     slack_index = kwargs.get('slack_index',self.nlp.n)
-            #     penalty_rho = kwargs.get('rho_pen',1.)
-            #     m_step = -self.g[slack_index:] / penalty_rho
-            #     x_trial[slack_index:] += m_step
-            #     x_trial[slack_index:] = numpy.where(x_trial[slack_index:] < 0., 0., x_trial[slack_index:])
-            #     f_trial_inter = f_trial
-            #     f_trial = nlp.obj(x_trial)
-            #     m = m - f_trial_inter + f_trial
-
             rho  = self.TR.Rho(self.f, f_trial, m)
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
 
-                # Trust-region step is succesfull.
+                # Trust-region step is successful
                 self.TR.UpdateRadius(rho, stepnorm)
-                self.x_old = self.x.copy()
-                self.x = x_trial.copy()
-                self.step = step.copy()
-
-                # (conservative) magical steps go here
-                if self.magic_steps == True:
-                    slack_index = kwargs.get('slack_index',self.nlp.n)
-                    penalty_rho = kwargs.get('rho_pen',1.)
-                    m_step = -self.g[slack_index:] / penalty_rho
-                    self.x[slack_index:] += m_step
-                    self.x[slack_index:] = numpy.where(self.x[slack_index:] < 0., 0., self.x[slack_index:])
-                    self.step = self.x - self.x_old
-                # end if
+                self.x = x_trial
 
                 self.f = nlp.obj(self.x)
-                # self.f = f_trial # For aggressive magical steps only
                 self.g = nlp.grad(self.x)
                 self.pgnorm = numpy.max(numpy.abs( \
                                         self.projected_gradient(self.x,self.g)))
                 step_status = 'Acc'
 
             else:
-                # Trust-region step is unsuccessfull.
-
-                if self.ny: # Backtracking linesearch following "Nocedal & Yuan"
-                    slope = numpy.dot(self.g, step)
-                    bk = 0
-                    while bk < self.nbk and \
-                            f_trial >= self.f + 1.0e-4 * alpha * slope:
-                        bk = bk + 1
-                        alpha /= 1.5
-                        x_trial = self.x + alpha * step
-                        f_trial = nlp.obj(x_trial)
-                    self.x = x_trial
-                    self.f = f_trial
-                    self.g = nlp.grad(self.x)
-                    self.pgnorm = numpy.max(numpy.abs( \
-                                        self.projected_gradient(self.x,self.g)))
-                    self.TR.Delta = alpha * stepnorm
-                    step_status = 'N-Y'
-                else:
-                    self.TR.UpdateRadius(rho, stepnorm)
+                # Trust-region step is unsuccessful
+                self.TR.UpdateRadius(rho, stepnorm)
 
             self.step_status = step_status
             self.radii.append(self.TR.Delta)
@@ -309,7 +233,6 @@ class SBMINFramework:
             exitOptimal = self.pgnorm <= reltol
             exitIter    = self.iter > self.maxiter
             exitTR      = self.TR.Delta <= 10.0 * self.TR.eps
-            # exitTR      = False
             exitUser    = status == 'usr'
 
         self.tsolve = cputime() - t    # Solve time
@@ -326,6 +249,7 @@ class SBMINFramework:
         self.status = status
 
 
+
 class SBMINLbfgsFramework(SBMINFramework):
     """
     Class SBMINLbfgsFramework is a subclass of SBMINFramework. The method is
@@ -340,7 +264,7 @@ class SBMINLbfgsFramework(SBMINFramework):
 
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
         self.save_g = True
-        self.try_restart = True
+
 
     def PostIteration(self, **kwargs):
         """
@@ -350,9 +274,10 @@ class SBMINLbfgsFramework(SBMINFramework):
         """
         # LBFGS approximation should only update on *successful* iterations
         if self.step_status == 'Acc':
-            s = self.step
+            s = self.solver.step
             y = self.g - self.g_old
             self.nlp.hupdate(s, y)
+
 
 
 class TrustBQPModel(NLPModel):

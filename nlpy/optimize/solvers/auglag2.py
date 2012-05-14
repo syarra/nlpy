@@ -1,5 +1,5 @@
 '''
-auglag.py
+auglag2.py
 
 Abstract classes of an augmented Lagrangian merit function and solver.
 The class is compatable with both the standard and matrix-free NLP
@@ -48,15 +48,7 @@ class AugmentedLagrangian(NLPModel):
 
     def __init__(self, nlp, **kwargs):
 
-        # Temporary error message as the class does not yet support
-        # range constraints
-        # if nlp.nrangeC > 0:
-        #     msg = 'Range inequality constraints are not supported.'
-        #     raise ValueError, msg
-
         # Analyze NLP to add slack variables to the formulation
-        # Ordering of the slacks in 'x' is assumed to be the order shown here
-
         if not isinstance(nlp, SlackNLP):
             self.nlp = SlackNLP(nlp, keep_variable_bounds=True, **kwargs)
         else: self.nlp = nlp
@@ -74,8 +66,11 @@ class AugmentedLagrangian(NLPModel):
         self.x0 = self.nlp.x0
     # end def
 
-    # Evaluate augmented Lagrangian function
+
     def obj(self, x, **kwargs):
+        '''
+        Evaluate augmented Lagrangian function.
+        '''
         cons = self.nlp.cons(x)
 
         alfunc = self.nlp.obj(x)
@@ -87,8 +82,10 @@ class AugmentedLagrangian(NLPModel):
     # end def
 
 
-    # Evaluate augmented Lagrangian gradient
     def grad(self, x, **kwargs):
+        '''
+        Evaluate augmented Lagrangian gradient.
+        '''
         nlp = self.nlp
         J = nlp.jac(x)
         cons = nlp.cons(x)
@@ -142,19 +139,23 @@ class AugmentedLagrangian(NLPModel):
 
         return w
 
+
     def hess(self, x, z=None, **kwargs):
         return SimpleLinearOperator(self.n, self.n, symmetric=True,
                                     matvec= lambda u: self.hprod(x,z,u))
 # end class
 
 
+
 class AugmentedLagrangianLbfgs(AugmentedLagrangian):
     '''
+    Use LBFGS approximate Hessian instead of true Hessian.
     '''
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangian.__init__(self, nlp, **kwargs)
         self.Hessapp = LBFGS(self.n, npairs=5, **kwargs)
+
 
     def hprod(self, x, z, v, **kwargs):
         '''
@@ -164,18 +165,22 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
         w = self.Hessapp.matvec(v)
         return w
 
+
     def hess(self, x, z=None, **kwargs):
         return SimpleLinearOperator(self.n, self.n, symmetric=True,
                                     matvec= lambda u: self.hprod(x,z,u))
+
 
     def hupdate(self, new_s=None, new_y=None):
         if new_s is not None and new_y is not None:
             self.Hessapp.store(new_s,new_y)
         return
 
+
     def hrestart(self):
         self.Hessapp.restart()
         return
+
 
     def Hprod(self, x, z, v, **kwargs):
         '''
@@ -207,12 +212,12 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
         return w
 
+
     def Hess(self, x, z=None, **kwargs):
         return SimpleLinearOperator(self.n, self.n, symmetric=True,
                                     matvec= lambda u: self.Hprod(x,z,u))
 
 # end class
-
 
 
 
@@ -286,7 +291,6 @@ class AugmentedLagrangianFramework(object):
         # Setup the logger. Install a NullHandler if no output needed.
         logger_name = kwargs.get('logger_name', 'nlpy.auglag')
         self.log = logging.getLogger(logger_name)
-        #self.log.addHandler(logging.NullHandler())
         if not self.verbose:
             self.log.propagate=False
 
@@ -320,7 +324,6 @@ class AugmentedLagrangianFramework(object):
         Pdphi = self.alprob.project_gradient(self.x,dphi)
         Pmax = numpy.max(numpy.abs(Pdphi))
 
-
         # In case the original problem doesn't have constraint
         # perform a sbmin minimization with given tolerances
         if self.alprob.nlp.m == 0:
@@ -340,7 +343,6 @@ class AugmentedLagrangianFramework(object):
         # Convergence check
         converged = Pmax <= self.omega_opt and max_cons <= self.eta_opt
 
-
         # Print out header and initial log.
         self.log.info(self.hline)
         self.log.info(self.header)
@@ -353,14 +355,7 @@ class AugmentedLagrangianFramework(object):
 
             self.iter += 1
 
-#            if self.verbose:
-#                self.log.debug('Major iteration : %5d'%self.iter)
-#                self.log.debug('Penalty parameter : %6.3e'%self.rho)
-#                self.log.debug('Required Projected gradient norm = %6.3e'%self.omega)
-#                self.log.debug('Required constraint         norm = %6.3e \n'%self.eta)
-
             # Perform bound-constrained minimization
-            #tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
             tr = TR(eta1=1.0e-4, eta2=.99, gamma1=.3, gamma2=2.5)
 
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
@@ -467,6 +462,8 @@ class AugmentedLagrangianFramework(object):
 
     # end def
 # end class
+
+
 
 class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
 

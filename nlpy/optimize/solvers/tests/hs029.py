@@ -73,6 +73,12 @@ def jac(x):
 
 # end def
 
+def jprod(x,p):
+
+	q = numpy.zeros(1,'d')
+	q[0] = p[0]*(-2*(x[0])) + p[1]*(-4*(x[1])) + p[2]*(-8*(x[2]))
+	return q
+
 def jtprod(x,q):
 
 	p = numpy.zeros(3,'d')
@@ -82,6 +88,20 @@ def jtprod(x,q):
 	return p
 
 # end def
+
+def hprod(x,u,v):
+
+	w = numpy.zeros(3,'d')
+
+	w[0] = -x[2]*v[1] - x[1]*v[2]
+	w[1] = -x[2]*v[0] - x[0]*v[2]
+	w[2] = -x[1]*v[0] - x[0]*v[1]
+
+	w[0] -= -2*u[0]*v[0]
+	w[1] -= -4*u[0]*v[1]
+	w[2] -= -8*u[0]*v[2]
+
+	return w
 
 # =============================================================================
 # Main program
@@ -98,10 +118,13 @@ prob.obj = obj
 prob.cons = cons
 prob.grad = grad
 # prob.jac = jac
+prob.jprod = jprod
 prob.jtprod = jtprod
+prob.hprod = hprod
 
 fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
-hndlr = logging.FileHandler('hs029_ms.log',mode='w')
+# hndlr = logging.FileHandler('hs029_ms.log',mode='w')
+hndlr = logging.StreamHandler()
 hndlr.setLevel(logging.INFO)
 hndlr.setFormatter(fmt)
 
@@ -118,20 +141,19 @@ sbminlogger.addHandler(hndlr)
 sbminlogger.propagate = False
 
 # Configure bqp logger.
-bqplogger = logging.getLogger('nlpy.bqp')
-bqplogger.setLevel(logging.DEBUG)
-bqplogger.addHandler(hndlr)
-bqplogger.propagate = False
+# bqplogger = logging.getLogger('nlpy.bqp')
+# bqplogger.setLevel(logging.DEBUG)
+# bqplogger.addHandler(hndlr)
+# bqplogger.propagate = False
 
 # Configure lbfgs logger.
-lbfgslogger = logging.getLogger('nlpy.lbfgs')
-lbfgslogger.setLevel(logging.INFO)
-lbfgslogger.addHandler(hndlr)
-lbfgslogger.propagate = False
+# lbfgslogger = logging.getLogger('nlpy.lbfgs')
+# lbfgslogger.setLevel(logging.INFO)
+# lbfgslogger.addHandler(hndlr)
+# lbfgslogger.propagate = False
 
-
-solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, 
-    		magic_steps=True, printlevel=2, ny=False)
+solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, printlevel=2)
+# solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, printlevel=2)
 t0 = time.time()
 solver.solve()
 print 'Solved in %8.3f seconds.'%(time.time() - t0)
