@@ -33,6 +33,7 @@ def FormEntireMatrix(on,om,Jop):
         J[:,i] = Jop * v
     return J
 
+
 class SufficientDecreaseCG(TruncatedCG):
     """
     An implementation of the conjugate-gradient algorithm with
@@ -77,6 +78,7 @@ class SufficientDecreaseCG(TruncatedCG):
         return None
 
 
+
 class BQP(object):
     """
     A matrix-free active-set method for the bound-constrained quadratic
@@ -92,7 +94,6 @@ class BQP(object):
         self.qp = qp
         self.Lvar = qp.Lvar
         self.Uvar = qp.Uvar
-        #print qp.n
         self.H = SimpleLinearOperator(qp.n, qp.n,
                                       lambda u: self.qp.hprod(self.qp.x0,
                                                               None,
@@ -178,8 +179,6 @@ class BQP(object):
         Returns the couple (lower,upper) containing the indices of variables
         that are at their lower and upper bound, respectively.
         """
-        #if check_feasible: self.check_feasible(x)
-
         lower_active = where(x==self.Lvar)
         upper_active = where(x==self.Uvar)
         return(lower_active, upper_active)
@@ -201,19 +200,15 @@ class BQP(object):
         # Perform projected Armijo linesearch.
         while not finished and step >= 1e-21:
 
-            #print 'proj linsearch,  x:', x,' d:', d, 'step', step
             xTrial = self.project(x + step * d)
             qTrial = qp.obj(xTrial)
-            #print 'proj linsearch,  xtrial= ', xTrial
-            #print 'xTrial=', xTrial, '  qTrial=', qTrial
             slope = np.dot(g, xTrial-x)
-            #print '  step=', step, ', slope=', slope
 
             if qTrial <= qval + self.armijo_factor * slope:
                 finished = True
             else:
                 step /= 3
-            #print 'proj linsearch step:', step
+
         return (xTrial, qTrial)
 
 
@@ -244,9 +239,6 @@ class BQP(object):
             active_set = self.get_active_set(x0)
         lower, upper = active_set
 
-        #print 'Entering projected_gradient'
-        #print '  qval=', qval, 'lower=', lower, ', upper=', upper
-
         x = x0.copy()
         settled_down = False
         sufficient_decrease = False
@@ -258,13 +250,11 @@ class BQP(object):
 
             iter += 1
             qOld = qval
-            #print 'pg iter:', iter, '  x:', x, 'qval:', qval, 'g:', g
             # TODO: Use appropriate initial steplength.
             (x, qval) = self.projected_linesearch(x, g, -g, qval)
 
             # Check decrease in objective.
             decrease = qOld - qval
-            #print 'decrease', decrease, 'best_decrease:', best_decrease
 
             if decrease <= self.pgrad_reltol * best_decrease:
                 sufficient_decrease = True
@@ -276,10 +266,9 @@ class BQP(object):
                 settled_down = True
             lower, upper = lowerTrial, upperTrial
             g = self.qp.grad(x)
-            #print '  qval=', qval, 'lower=', lower, ', upper=', upper
-            #print '  settled=', repr(settled_down), ', decrease=', repr(sufficient_decrease)
 
         return (x, (lower, upper))
+
 
     def to_boundary(self, x, d, free_vars):
         """
@@ -305,12 +294,9 @@ class BQP(object):
                 alowmin = np.min(alowp)
             else: alowmin = np.infty
             alpha = np.minimum(alowmin, aupmin)
-            # try:
             x += alpha*d
-            # except:
-            #     pdb.set_trace()
 
-        # Do another projected gradient
+        # Do another projected gradient update
         (x, (lower,upper)) = self.projected_gradient(x)
 
         return (x, (lower,upper))
@@ -332,8 +318,6 @@ class BQP(object):
         # Compute stopping tolerance.
         g = qp.grad(x)
         gNorm = np.linalg.norm(g)
-        #stoptol = self.stoptol * gNorm
-        #print 'g:', g, 'gnorm', gNorm
         pg = self.pgrad(x, g=g, active_set=(lower,upper))
         pgNorm = np.linalg.norm(pg)
 
@@ -342,7 +326,6 @@ class BQP(object):
 
         exitOptimal = exitIter = False
 
-
         # Print out header and initial log.
         self.log.info(self.hline)
         self.log.info(self.header)
@@ -350,26 +333,19 @@ class BQP(object):
         self.log.info(self.format0 % (iter,0.0,
                                              pgNorm, ''))
 
-        #while pgNorm > stoptol and iter < maxiter:
         while not (exitOptimal or exitIter):
 
             iter += 1
-            #print ' bqp iter:', iter
             if iter >= maxiter:
                 exitIter = True
                 continue
 
             # Projected-gradient phase: determine next working set.
-
-            #print 'iter:', iter, 'x=', x, '  g=', g
             (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
             g = qp.grad(x)
             qval = qp.obj(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
-            #print 'Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm)
-
-            #print 'x=', x, '  g=', g, '  qval=', qval
 
             if pgNorm <= stoptol:
                 exitOptimal = True
@@ -465,6 +441,7 @@ class BQP(object):
         self.lower = lower
         self.upper = upper
         return
+
 
 
 if __name__ == '__main__':

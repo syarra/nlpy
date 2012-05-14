@@ -32,7 +32,6 @@ from nlpy.model.mfnlp import MFModel
 from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianLbfgsFramework, AugmentedLagrangianFramework
 from nlpy.optimize.solvers.sbmin import SBMINLbfgsFramework, SBMINFramework
 from nlpy.tools.logs import config_logger
-
 # =============================================================================
 # Functions for defining the minimization problem
 # =============================================================================
@@ -98,8 +97,8 @@ def hprod(x,u,v, **kwargs):
         u=numpy.zeros(2)
 
     p = numpy.zeros(2,'d')
-    p[0] = obj_weight*v[0]*6*(x[0]-10.)
-    p[1] = obj_weight*v[1]*6*(x[1]-20.)
+    p[0] = v[0]*6*(x[0]-10.)
+    p[1] = v[1]*6*(x[1]-20.)
 
     p[0] += 2.*u[0]*v[0]
     p[1] += 2.*u[0]*v[1]
@@ -132,6 +131,7 @@ prob.jtprod = jtprod
 prob.hprod = hprod
 
 fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
+# hndlr = logging.FileHandler('hs019_2d_ms.log',mode='w')
 hndlr = logging.StreamHandler()
 hndlr.setLevel(logging.DEBUG)
 hndlr.setFormatter(fmt)
@@ -149,23 +149,23 @@ sbminlogger.addHandler(hndlr)
 sbminlogger.propagate = False
 
 # Configure bqp logger.
-#bqplogger = logging.getLogger('nlpy.bqp')
-#bqplogger.setLevel(logging.INFO)
-#bqplogger.addHandler(hndlr)
-#bqplogger.propagate = False
+# bqplogger = logging.getLogger('nlpy.bqp')
+# bqplogger.setLevel(logging.INFO)
+# bqplogger.addHandler(hndlr)
+# bqplogger.propagate = False
 
 # Configure lbfgs logger.
-lbfgslogger = logging.getLogger('nlpy.lbfgs')
-lbfgslogger.setLevel(logging.INFO)
-lbfgslogger.addHandler(hndlr)
-lbfgslogger.propagate = False
+# lbfgslogger = logging.getLogger('nlpy.lbfgs')
+# lbfgslogger.setLevel(logging.INFO)
+# lbfgslogger.addHandler(hndlr)
+# lbfgslogger.propagate = False
 
-solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, magic_steps=False, printlevel=2, logger='essai', verbose=True, ny=False)
 t0 = time.time()
-#solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, magic_steps=False, printlevel=2, ny=True)
+solver = AugmentedLagrangianFramework(prob, SBMINFramework, maxouter=50, printlevel=2, logger='essai', verbose=True)
+# solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework, maxouter=50, printlevel=2)
 
 solver.solve()
 
-print 'Solved in %8.3f seconds, with objective function %15.7e'%(time.time() - t0, solver.f)
+print 'Solved in %8.3f seconds.'%(time.time() - t0)
 print ' in %d' % solver.niter_total
 
