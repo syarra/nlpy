@@ -8,7 +8,7 @@ from nlpy.krylov.linop import SimpleLinearOperator
 from nlpy.tools import norms
 from nlpy.tools.timing import cputime
 from nlpy.tools.exceptions import UserExitRequest
-import numpy
+import numpy as np
 import logging
 import pdb
 from math import sqrt
@@ -18,9 +18,9 @@ from nlpy.krylov.linop import SimpleLinearOperator
 __docformat__ = 'restructuredtext'
 
 def FormEntireMatrix(on,om,Jop):
-    J = numpy.zeros([om,on])
+    J = np.zeros([om,on])
     for i in range(0,on):
-        v = numpy.zeros(on)
+        v = np.zeros(on)
         v[i] = 1.
         J[:,i] = Jop * v
     return J
@@ -108,7 +108,7 @@ class SBMINFramework:
                    l <= x <= u
         """
         p = x - g
-        med = numpy.maximum(numpy.minimum(p,self.nlp.Uvar),self.nlp.Lvar)
+        med = np.maximum(np.minimum(p,self.nlp.Uvar),self.nlp.Lvar)
         q = x - med
 
         return q
@@ -136,12 +136,12 @@ class SBMINFramework:
 
         self.f        = self.f0
         self.g        = self.g_old
-        self.pgnorm = numpy.max(numpy.abs( \
+        self.pgnorm = np.max(np.abs( \
                                 self.projected_gradient(self.x,self.g)))
         self.pg0 = self.pgnorm
 
         # Reset initial trust-region radius.
-        self.TR.Delta = numpy.maximum(0.1 * self.pgnorm,.2)
+        self.TR.Delta = np.maximum(0.1 * self.pgnorm,.2)
 
         self.radii = [ self.TR.Delta ]
 
@@ -186,7 +186,7 @@ class SBMINFramework:
             m = self.solver.m
             #print m
 #            if m is None:
-#                m = numpy.dot(self.g, step) + 0.5*numpy.dot(step, H * step)
+#                m = np.dot(self.g, step) + 0.5*np.dot(step, H * step)
 
             self.total_bqpiter += bqpiter
             x_trial = self.x.copy() + step
@@ -203,7 +203,7 @@ class SBMINFramework:
 
                 self.f = nlp.obj(self.x)
                 self.g = nlp.grad(self.x)
-                self.pgnorm = numpy.max(numpy.abs( \
+                self.pgnorm = np.max(np.abs( \
                                         self.projected_gradient(self.x,self.g)))
                 step_status = 'Acc'
 
@@ -293,14 +293,14 @@ class TrustBQPModel(NLPModel):
 
     def __init__(self, nlp, x_k, delta, **kwargs):
 
-        Delta = delta*numpy.ones(nlp.n)
-        Lvar = numpy.maximum(nlp.Lvar - x_k, -Delta)
-        Uvar = numpy.minimum(nlp.Uvar - x_k, Delta)
+        Delta = delta*np.ones(nlp.n)
+        Lvar = np.maximum(nlp.Lvar - x_k, -Delta)
+        Uvar = np.minimum(nlp.Uvar - x_k, Delta)
 
         NLPModel.__init__(self, n=nlp.n, m=nlp.m, name='TrustRegionSubproblem',
                           Lvar=Lvar ,Uvar =Uvar)
         self.nlp = nlp
-        self.x0 = numpy.zeros(self.nlp.n)
+        self.x0 = np.zeros(self.nlp.n)
         self.x_k = x_k.copy()
         self.delta = delta
         self.g_k = kwargs.get('g_k', None)
@@ -320,8 +320,8 @@ class TrustBQPModel(NLPModel):
         """
         Hx = self.nlp.hprod(self.x_k, None, x)
 
-        qapprox = numpy.dot(self.g_k.copy(), x)
-        qapprox += .5 * numpy.dot(x, Hx)
+        qapprox = np.dot(self.g_k.copy(), x)
+        qapprox += .5 * np.dot(x, Hx)
 
         return qapprox
 

@@ -16,7 +16,7 @@ import copy
 # =============================================================================
 # External Python modules
 # =============================================================================
-import numpy
+import numpy as np
 import logging
 
 # =============================================================================
@@ -34,9 +34,7 @@ from nlpy.optimize.solvers.sbmin import SBMINFramework
 from nlpy.optimize.solvers.sbmin import SBMINLbfgsFramework
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
-# =============================================================================
-# Augmented Lagrangian Problem Class
-# =============================================================================
+
 class AugmentedLagrangian(NLPModel):
     '''
     This class is a reformulation of an NLP, used to compute the
@@ -56,7 +54,7 @@ class AugmentedLagrangian(NLPModel):
         self.rho_init = kwargs.get('rho_init',10.)
         self.rho = self.rho_init
 
-        self.pi0 = numpy.zeros(self.nlp.m)
+        self.pi0 = np.zeros(self.nlp.m)
         self.pi = self.pi0.copy()
 
         self.n = self.nlp.n
@@ -75,8 +73,8 @@ class AugmentedLagrangian(NLPModel):
 
         alfunc = self.nlp.obj(x)
 
-        alfunc -= numpy.dot(self.pi,cons)
-        alfunc += 0.5*self.rho*numpy.sum(cons**2)
+        alfunc -= np.dot(self.pi,cons)
+        alfunc += 0.5*self.rho*np.dot(cons,cons)
 
         return alfunc
     # end def
@@ -103,7 +101,7 @@ class AugmentedLagrangian(NLPModel):
         '''
 
         p = x - g
-        med = numpy.maximum(numpy.minimum(p,self.Uvar),self.Lvar)
+        med = np.maximum(np.minimum(p,self.Uvar),self.Lvar)
         q = x - med
 
         return q
@@ -121,7 +119,7 @@ class AugmentedLagrangian(NLPModel):
         rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
 
 
-        w = numpy.zeros(self.n)
+        w = np.zeros(self.n)
 
         pi_bar = self.pi[:om].copy()
         pi_bar[upperC] *= -1.0
@@ -194,7 +192,7 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
         rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
 
 
-        w = numpy.zeros(self.n)
+        w = np.zeros(self.n)
 
         pi_bar = self.pi[:om].copy()
         pi_bar[upperC] *= -1.0
@@ -247,14 +245,14 @@ class AugmentedLagrangianFramework(object):
 
         self.alprob = AugmentedLagrangian(nlp,**kwargs)
         self.x = kwargs.get('x0', self.alprob.x0.copy())
-        self.pi0 = kwargs.get('pi0', numpy.zeros(self.alprob.nlp.m))
+        self.pi0 = kwargs.get('pi0', np.zeros(self.alprob.nlp.m))
         self.innerSolver = innerSolver
         self.phi0 = None
         self.dphi0 = None
         self.dphi0norm = None
         self.alprob.pi0 = self.pi0
-        self.alprob.rho = kwargs.get('rho_init',numpy.array(10.))
-        self.alprob.rho_init = kwargs.get('rho_init',numpy.array(10.))
+        self.alprob.rho = kwargs.get('rho_init',np.array(10.))
+        self.alprob.rho_init = kwargs.get('rho_init',np.array(10.))
         self.rho = self.alprob.rho
         self.pi = self.alprob.pi
         self.tau =kwargs.get('tau', 0.1)
@@ -274,7 +272,7 @@ class AugmentedLagrangianFramework(object):
         self.ny = kwargs.get('ny',True)
 
         self.f0 = None
-        self.f = +numpy.infty
+        self.f = +np.infty
 
         # Maximum number of outer iterations (use maxiter or maxinner for TR)
         self.maxouter = kwargs.get('maxouter', 10*self.alprob.nlp.original_n)
@@ -297,7 +295,7 @@ class AugmentedLagrangianFramework(object):
 
     def UpdateMultipliersOrPenaltyParameters(self, consnorm, convals):
 
-        if consnorm <= numpy.maximum(self.eta, self.eta_opt):
+        if consnorm <= np.maximum(self.eta, self.eta_opt):
             # No change in rho, update multipliers, tighten tolerances
             self.pi -= self.rho*convals
         else:
@@ -322,7 +320,7 @@ class AugmentedLagrangianFramework(object):
         self.f0 = self.alprob.nlp.obj(self.x[:original_n])
 
         Pdphi = self.alprob.project_gradient(self.x,dphi)
-        Pmax = numpy.max(numpy.abs(Pdphi))
+        Pmax = np.max(np.abs(Pdphi))
 
         # In case the original problem doesn't have constraint
         # perform a sbmin minimization with given tolerances
@@ -331,7 +329,7 @@ class AugmentedLagrangianFramework(object):
             self.omega = self.omega_opt
             self.eta = self.eta_opt
         else:
-            max_cons = numpy.max(numpy.abs(self.alprob.nlp.cons(self.x)))
+            max_cons = np.max(np.abs(self.alprob.nlp.cons(self.x)))
             self.omega = self.omega_init
             self.eta = self.eta_init
 
@@ -360,26 +358,23 @@ class AugmentedLagrangianFramework(object):
 
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
-                                        maxiter = 250,
-                                        verbose=True,
-                                        magic_steps=self.magic_steps,
-                                        ny=self.ny)
+                                        verbose=True)
 
-            SBMIN.Solve(rho_pen=self.rho,slack_index=original_n)
+            SBMIN.Solve()
             self.x = SBMIN.x.copy()
             self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.niter_total += SBMIN.iter
 
             dphi = self.alprob.grad(self.x)
             Pdphi = self.alprob.project_gradient(self.x,dphi)
-            Pmax_new = numpy.max(numpy.abs(Pdphi))
+            Pmax_new = np.max(np.abs(Pdphi))
             convals_new = self.alprob.nlp.cons(self.x)
 
             if self.alprob.nlp.m == 0:
                 max_cons_new = 0
                 self.iter = SBMIN.iter
             else:
-                max_cons_new = numpy.max(numpy.abs(convals_new))
+                max_cons_new = np.max(np.abs(convals_new))
 
             self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.pgnorm = Pmax_new
@@ -405,7 +400,7 @@ class AugmentedLagrangianFramework(object):
 
 
             # Update penalty parameter or multipliers based on result
-            if max_cons_new <= numpy.maximum(self.eta, self.eta_opt):
+            if max_cons_new <= np.maximum(self.eta, self.eta_opt):
 
                 # Update convergence check
                 if max_cons_new <= self.eta_opt and Pmax_new <= self.omega_opt:
@@ -457,7 +452,7 @@ class AugmentedLagrangianFramework(object):
         if self.printlevel>=1:
             print 'f = ',self.f
             if self.alprob.nlp.m != 0:
-                print 'pi_max = ',numpy.max(self.pi)
+                print 'pi_max = ',np.max(self.pi)
                 print 'max infeas. = ',max_cons_new
 
     # end def
@@ -471,7 +466,7 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
         self.alprob = AugmentedLagrangianLbfgs(nlp)
         self.alprob.pi0 = self.pi0
-        self.alprob.rho = kwargs.get('rho_init',numpy.array(10.))
-        self.alprob.rho_init = kwargs.get('rho_init',numpy.array(10.))
+        self.alprob.rho = kwargs.get('rho_init',np.array(10.))
+        self.alprob.rho_init = kwargs.get('rho_init',np.array(10.))
         self.rho = self.alprob.rho
         self.pi = self.alprob.pi

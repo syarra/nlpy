@@ -19,7 +19,6 @@ import copy
 # =============================================================================
 import numpy as np
 
-
 # =============================================================================
 # Extension modules
 # =============================================================================
@@ -30,9 +29,6 @@ from nlpy.model import _amplpy
 from nlpy.krylov.linop import PysparseLinearOperator
 
 
-# =============================================================================
-# Matrix-Free Problem Class
-# =============================================================================
 class MFModel(NLPModel):
 
     '''
@@ -51,10 +47,12 @@ class MFModel(NLPModel):
         NLPModel.__init__(self,n=n,m=m,name=name,**kwargs)
     # end def
 
+
     def jac(self, x, **kwargs):
         return SimpleLinearOperator(self.m, self.n, symmetric=False,
                          matvec=lambda u: self.jprod(x,u,**kwargs),
                          matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
+
 
     def hess(self, x, z=None, **kwargs):
         return SimpleLinearOperator(self.n, self.n, symmetric=True,
@@ -63,15 +61,8 @@ class MFModel(NLPModel):
 
 
 
-"""
-A framework for converting a general nonlinear program into a farm with
-(possibly nonlinear) equality constraints and bounds only, by adding slack
-variables.
-"""
-
-
 class SlackNLP( MFModel ):
-    """
+    '''
     General framework for converting a nonlinear optimization problem to a
     form using slack variables.
 
@@ -106,7 +97,7 @@ class SlackNLP( MFModel ):
     such as the index set of constraints with an upper bound, etc., but
     rather performs the evaluations of the constraints for the updated
     model implicitly.
-    """
+    '''
 
     def __init__(self, nlp, keep_variable_bounds=False, **kwargs):
 
@@ -168,35 +159,39 @@ class SlackNLP( MFModel ):
 
         return
 
+
     def InitializeSlacks(self, val=0.0, **kwargs):
-        """
+        '''
         Initialize all slack variables to given value. This method may need to
         be overridden.
-        """
+        '''
         self.x0[self.original_n:] = val
         return
 
+
     def obj(self, x):
-        """
+        '''
         Return the value of the objective function at `x`. This function is
         specialized since the original objective function only depends on a
         subvector of `x`.
-        """
+        '''
         return self.nlp.obj(x[:self.original_n])
 
+
     def grad(self, x):
-        """
+        '''
         Return the value of the gradient of the objective function at `x`.
         This function is specialized since the original objective function only
         depends on a subvector of `x`.
-        """
+        '''
         g = np.zeros(self.n)
         g[:self.original_n] = self.nlp.grad(x[:self.original_n])
 
         return g
 
+
     def cons(self, x):
-        """
+        '''
         Evaluate the vector of general constraints for the modified problem.
         Constraints are stored in the order in which they appear in the
         original problem. If constraint i is a range constraint, c[i] will
@@ -213,7 +208,7 @@ class SlackNLP( MFModel ):
         3. [ b  ]   linear constraints corresponding to bounds on original problem
         4. [ bR ]   linear constraints corresponding to 'upper' side of two-sided
                     bounds
-        """
+        '''
         n = self.n ; on = self.original_n
         m = self.m ; om = self.original_m
         nlp = self.nlp
@@ -267,11 +262,12 @@ class SlackNLP( MFModel ):
 
         return c
 
+
     def Bounds(self, x):
-        """
+        '''
         Evaluate the vector of equality constraints corresponding to bounds
         on the variables in the original problem.
-        """
+        '''
         lowerB = self.lowerB ; nlowerB = self.nlowerB
         upperB = self.upperB ; nupperB = self.nupperB
         rangeB = self.rangeB ; nrangeB = self.nrangeB
@@ -340,6 +336,7 @@ class SlackNLP( MFModel ):
 
         return p
 
+
     def jtprod(self, x, v, **kwargs):
 
         nlp = self.nlp
@@ -382,15 +379,10 @@ class SlackNLP( MFModel ):
 
 
 
-
-"""
-Python interface to AMPL model for a fake matrix-free use of AMPL
-"""
-
-
 class MFAmplModel(AmplModel):
-    """
-    """
+    '''
+    Python interface to AMPL model for a fake matrix-free use of AMPL
+    '''
 
     def __init__(self, stub, **kwargs):
 
@@ -398,8 +390,9 @@ class MFAmplModel(AmplModel):
         self.Jprod = 0
         self. JTprod = 0
 
+
     def _J(self, x, *args, **kwargs):
-        """
+        '''
         Evaluate sparse Jacobian of constraints at x.
         Returns a sparse matrix in format self.mformat
         (0 = compressed sparse row, 1 = linked list).
@@ -410,7 +403,7 @@ class MFAmplModel(AmplModel):
         2. lower bound only
         3. upper bound only
         4. range constraints.
-        """
+        '''
         store_zeros = kwargs.get('store_zeros', False)
         store_zeros = 1 if store_zeros else 0
         if len(args) > 0:
@@ -431,6 +424,7 @@ class MFAmplModel(AmplModel):
         self.Jprod += 1
         return self._J(x, **kwargs) * v
 
+
     def jtprod(self, x, v, **kwargs):
         self.JTprod += 1
         return self._J(x, **kwargs).T * v
@@ -440,6 +434,7 @@ class MFAmplModel(AmplModel):
         return SimpleLinearOperator(self.m, self.n, symmetric=False,
                          matvec=lambda u: self.jprod(x,u,**kwargs),
                          matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
+
 
     def hess(self, x, z=None, **kwargs):
         a = self.grad(x)
