@@ -43,8 +43,8 @@ class SBMINFramework:
     :keywords:
 
         :x0:           starting point                    (default nlp.x0)
-        :reltol:       absolute stopping tolerance       (default 1.0e-6)
-        :maxiter:      maximum number of iterations      (default max(1000,10n))
+        :reltol:       relative stopping tolerance       (default 1.0e-5)
+        :maxiter:      maximum number of iterations      (default 10n)
         :logger_name:  name of a logger object that can be used in the post
                        iteration                         (default None)
         :verbose:      print some info if True                 (default True)
@@ -80,12 +80,13 @@ class SBMINFramework:
         self.alpha   = 1.0
 
         self.reltol  = kwargs.get('reltol', 1.0e-5)
-        self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
+        self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
 
         self.hformat = '%-5s  %8s  %7s  %5s  %8s  %8s  %4s'
-        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','bqp','rho','Radius','Stat')
+        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','bqp',
+                                       'rho','Radius','Stat')
         self.hlen   = len(self.header)
         self.hline  = '     '+'-' * self.hlen
         self.format = '     %-5d  %8.2e  %7.1e  %5d  %8.1e  %8.1e  %4s'
@@ -151,10 +152,10 @@ class SBMINFramework:
 
         self.radii = [ self.TR.Delta ]
 
-        reltol = self.reltol
+        stoptol = self.reltol * self.pg0
         step_status = None
         exitIter = exitUser = exitTR = False
-        exitOptimal = self.pgnorm <= reltol
+        exitOptimal = self.pgnorm <= stoptol
         status = ''
 
         t = cputime()
@@ -267,7 +268,7 @@ class SBMINFramework:
                           self.pgnorm, bqpiter, rho,
                           self.radii[-2], pstatus))
 
-            exitOptimal = self.pgnorm <= reltol
+            exitOptimal = self.pgnorm <= stoptol
             exitIter    = self.iter > self.maxiter
             exitTR      = self.TR.Delta <= 10.0 * self.TR.eps
             exitUser    = status == 'usr'
