@@ -1221,4 +1221,66 @@ class AmplModel(NLPModel):
         return
 
 
-###############################################################################
+
+class MFAmplModel(AmplModel):
+    '''
+    Python interface to AMPL model for a fake matrix-free use of AMPL
+    '''
+
+    def __init__(self, stub, **kwargs):
+
+        AmplModel.__init__(self, stub, **kwargs)
+        self.Jprod = 0
+        self. JTprod = 0
+
+
+    def _J(self, x, *args, **kwargs):
+        '''
+        Evaluate sparse Jacobian of constraints at x.
+        Returns a sparse matrix in format self.mformat
+        (0 = compressed sparse row, 1 = linked list).
+
+        The constraints appear in the following order:
+
+        1. equalities
+        2. lower bound only
+        3. upper bound only
+        4. range constraints.
+        '''
+        store_zeros = kwargs.get('store_zeros', False)
+        store_zeros = 1 if store_zeros else 0
+        if len(args) > 0:
+            if type(args[0]).__name__ == 'll_mat':
+                J = self.model.eval_J(x, self.mformat, store_zeros, args[0])
+            else:
+                return None
+        else:
+            J = self.model.eval_J(x, self.mformat, store_zeros)
+
+        # Warning!! This next line doesn't work for the coordinate format option.
+        if self.scale_con is not None:
+            J = spmatrix.matrixmultiply(self.scale_con_diag, J)
+        return PysparseLinearOperator(J, symmetric=False)
+
+
+    def jprod(self, x, v, **kwargs):
+        self.Jprod += 1
+        return self._J(x, **kwargs) * v
+
+
+    def jtprod(self, x, v, **kwargs):
+        self.JTprod += 1
+        return self._J(x, **kwargs).T * v
+
+
+    def jac(self, x, **kwargs):
+        return SimpleLinearOperator(self.m, self.n, symmetric=False,
+                         matvec=lambda u: self.jprod(x,u,**kwargs),
+                         matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
+
+
+    def hess(self, x, z=None, **kwargs):
+        a = self.grad(x)
+        #a = self.hprod(x,None, np.zeros(self.n))
+        return SimpleLinearOperator(self.n, self.n, symmetric=True,
+                         matvec=lambda u: self.hprod(x,z,u))
