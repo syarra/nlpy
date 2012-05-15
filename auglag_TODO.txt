@@ -1,0 +1,30 @@
+Matrix-Free Augmented Lagrangian TODO List
+------------------------------------------
+
+- Absolute and relative convergence tolerances at each level of method
+
+- Nocedal-Yuan backtracking
+	- implemented, May 15, 2012
+
+- Magical steps for slack variables
+
+- Nonmonotone update strategy
+
+- Automatic variable / constraint scaling
+
+- Store previous x to prevent repeated function evaluations at the same point
+
+
+More "radical" / experimental ideas:
+
+- "Smart" selection of initial TR radius for each major iteration
+
+- Use SHA1 key for storing x (see above) for performance
+
+- "Smart" selection of initial penalty parameter
+
+- "Smart" selection of initial multipliers, e.g. least-squares initialization
+
+- Extrapolation of x near a solution with good multiplier estimates
+
+- More interesting ways of computing the step???
