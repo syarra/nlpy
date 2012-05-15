@@ -179,41 +179,6 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
         return
 
 
-    def Hprod(self, x, z, v, **kwargs):
-        '''
-        Compute the Hessian-vector product of the Hessian of the augmented
-        Lagrangian with arbitrary vector v.
-        '''
-        nlp = self.nlp
-        on = nlp.original_n
-        om = nlp.original_m
-        upperC = nlp.upperC ; nupperC = nlp.nupperC
-        rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
-
-
-        w = np.zeros(self.n)
-
-        pi_bar = self.pi[:om].copy()
-        pi_bar[upperC] *= -1.0
-        pi_bar[rangeC] -= self.pi[om:].copy()
-
-        cons = nlp.cons(x)
-        mu = cons[:om].copy()
-        mu[upperC] *= -1.0
-        mu[rangeC] -= cons[om:].copy()
-
-        w[:on] = nlp.hprod(x[:on],pi_bar - self.rho * mu, v[:on])
-
-        J = nlp.jac(x)
-        w += self.rho * (J.T * (J * v))
-
-        return w
-
-
-    def Hess(self, x, z=None, **kwargs):
-        return SimpleLinearOperator(self.n, self.n, symmetric=True,
-                                    matvec= lambda u: self.Hprod(x,z,u))
-
 # end class
 
 
@@ -337,16 +302,15 @@ class AugmentedLagrangianFramework(object):
         Pdphi = self.alprob.project_gradient(self.x,dphi)
         Pmax = np.max(np.abs(Pdphi))
 
-        # In case the original problem doesn't have constraints,
-        # perform an sbmin minimization with given tolerances
+        # Specific handling for the case where the original NLP is 
+        # unconstrained
         if self.alprob.nlp.m == 0:
-            max_cons = 0
-            self.omega = self.omega_opt
-            self.eta = self.eta_opt
+            max_cons = 0.
         else:
             max_cons = np.max(np.abs(self.alprob.nlp.cons(self.x)))
-            self.omega = self.omega_init
-            self.eta = self.eta_init
+
+        self.omega = self.omega_init
+        self.eta = self.eta_init
 
         self.iter = 0
         self.inner_fail_count = 0
@@ -363,7 +327,7 @@ class AugmentedLagrangianFramework(object):
         self.log.info(self.format0 % (self.iter, self.f,
                                              self.pg0, '', max_cons,
                                              '', self.alprob.rho,''))
-        # While not converged, loop
+
         while not converged and self.iter < self.maxouter:
 
             self.iter += 1
@@ -385,9 +349,10 @@ class AugmentedLagrangianFramework(object):
             Pmax_new = np.max(np.abs(Pdphi))
             convals_new = self.alprob.nlp.cons(self.x)
 
+            # Specific handling for the case where the original NLP is 
+            # unconstrained
             if self.alprob.nlp.m == 0:
-                max_cons_new = 0
-                self.iter = SBMIN.iter
+                max_cons_new = 0.
             else:
                 max_cons_new = np.max(np.abs(convals_new))
 
