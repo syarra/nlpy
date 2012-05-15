@@ -126,7 +126,7 @@ class AugmentedLagrangian(NLPModel):
         pi_bar[rangeC] -= self.pi[om:].copy()
 
         cons = nlp.cons(x)
-        mu = cons.copy()#[:om].copy()
+        mu = cons[:om].copy()
         mu[upperC] *= -1.0
         mu[rangeC] -= cons[om:].copy()
 
