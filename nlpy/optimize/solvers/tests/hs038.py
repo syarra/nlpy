@@ -96,7 +96,7 @@ prob.jtprod = jtprod
 prob.hprod = hprod
 
 fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
-# hndlr = logging.FileHandler('hs038_ms.log',mode='w')
+# hndlr = logging.FileHandler('hs038.log',mode='w')
 hndlr = logging.StreamHandler()
 hndlr.setLevel(logging.INFO)
 hndlr.setFormatter(fmt)
@@ -125,9 +125,9 @@ sbminlogger.propagate = False
 # lbfgslogger.addHandler(hndlr)
 # lbfgslogger.propagate = False
 
-solver = AugmentedLagrangianFramework(prob, SBMINFramework)
-# solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework)
+# solver = AugmentedLagrangianFramework(prob, SBMINFramework)
+solver = AugmentedLagrangianLbfgsFramework(prob, SBMINLbfgsFramework)
 t0 = time.time()
-solver.solve()
+solver.solve(ny=True)
 print 'Solved in %8.3f seconds.'%(time.time() - t0)
 print ' in %d' % solver.niter_total
