@@ -187,7 +187,7 @@ class AugmentedLagrangianFramework(object):
     '''
     Solve an NLP using the augmented Lagrangian method. This class is
     based on the successful Fortran code LANCELOT, but provides a more
-    flexible implementation.
+    flexible implementation, along with some new features.
 
     References
     ----------
@@ -337,7 +337,7 @@ class AugmentedLagrangianFramework(object):
 
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
-                                        verbose=True)
+                                        verbose=True,**kwargs)
 
             SBMIN.Solve()
             self.x = SBMIN.x.copy()
@@ -382,7 +382,7 @@ class AugmentedLagrangianFramework(object):
                 # If optimality of the inner loop is not achieved within 10 
                 # major iterations, exit immediately
                 if self.inner_fail_count == 10:
-                    self.status = 'Infeas'
+                    self.status = 'Stall'
                     self.log.debug('Current point could not be improved, exiting ... \n')
                     break
 

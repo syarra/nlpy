@@ -72,6 +72,12 @@ class SBMINFramework:
         self.save_g = False              # For methods that need g_{k-1} and g_k
         self.pgnorm  = None
         self.tsolve = 0.0
+        self.true_step = None
+
+        # Options for Nocedal-Yuan backtracking
+        self.ny      = kwargs.get('ny', False)
+        self.nbk     = kwargs.get('nbk', 5)
+        self.alpha   = 1.0
 
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
@@ -165,7 +171,7 @@ class SBMINFramework:
 
             self.iter += 1
 
-            # Save current gradient for LBFGS needs
+            # Save current gradient for quasi-Newton approximation
             if self.save_g:
                 self.g_old = self.g.copy()
 
@@ -179,14 +185,12 @@ class SBMINFramework:
             self.solver.Solve()
 
             step = self.solver.step
+            self.true_step = self.solver.step.copy()
             stepnorm = self.solver.stepNorm
             bqpiter = self.solver.niter
 
             # Obtain model value at next candidate
             m = self.solver.m
-            #print m
-#            if m is None:
-#                m = np.dot(self.g, step) + 0.5*np.dot(step, H * step)
 
             self.total_bqpiter += bqpiter
             x_trial = self.x.copy() + step
@@ -208,8 +212,41 @@ class SBMINFramework:
                 step_status = 'Acc'
 
             else:
-                # Trust-region step is unsuccessful
-                self.TR.UpdateRadius(rho, stepnorm)
+
+                # Attempt Nocedal-Yuan backtracking if requested
+                if self.ny:
+                    alpha = self.alpha
+                    slope = np.dot(self.g, step)
+                    bk = 0
+
+                    while bk < self.nbk and \
+                            f_trial >= self.f + 1.0e-4 * alpha * slope:
+                        bk = bk + 1
+                        alpha /= 1.5
+                        x_trial = self.x + alpha * step
+                        f_trial = nlp.obj(x_trial)
+
+                    if f_trial >= self.f + 1.0e-4 * alpha * slope:
+                        # Backtrack failed to produce an improvement, 
+                        # keep the current x, f, and g.
+                        # (Monotone strategy)
+                        step_status = 'N-Y Rej'
+                    else:
+                        # Backtrack succeeded, update the current point
+                        self.x = x_trial
+                        self.true_step *= alpha
+                        self.f = f_trial
+                        self.g = nlp.grad(self.x)
+                        self.pgnorm = np.max(np.abs( \
+                                            self.projected_gradient(self.x,self.g)))
+                        step_status = 'N-Y Acc'
+
+                    # Update the TR radius regardless of backtracking success
+                    self.TR.Delta = alpha * stepnorm
+
+                else:
+                    # Trust-region step is unsuccessful
+                    self.TR.UpdateRadius(rho, stepnorm)
 
             self.step_status = step_status
             self.radii.append(self.TR.Delta)
@@ -273,8 +310,8 @@ class SBMINLbfgsFramework(SBMINFramework):
         if all the memory has been used.
         """
         # LBFGS approximation should only update on *successful* iterations
-        if self.step_status == 'Acc':
-            s = self.solver.step
+        if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
+            s = self.true_step
             y = self.g - self.g_old
             self.nlp.hupdate(s, y)
 
