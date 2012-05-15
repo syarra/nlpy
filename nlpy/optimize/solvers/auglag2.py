@@ -227,13 +227,14 @@ class AugmentedLagrangianFramework(object):
         self.b_omega = kwargs.get('b_omega',1.)
         self.a_eta = kwargs.get('a_eta',0.1)
         self.b_eta = kwargs.get('b_eta',0.9)
-        self.omega_opt = kwargs.get('omega_opt',1.e-7)
-        self.eta_opt = kwargs.get('eta_opt',1.e-7)
-        
+        self.omega_rel = kwargs.get('omega_rel',1.e-7)
+        self.eta_rel = kwargs.get('eta_rel',1.e-7)
+
         self.f0 = None
         self.f = +np.infty
 
-        # Maximum number of outer iterations (use 'maxiter' or 'maxinner' keyword for TR)
+        # Maximum number of outer iterations 
+        # (use 'maxiter' or 'maxinner' keyword for TR)
         self.maxouter = kwargs.get('maxouter', 10*self.alprob.nlp.original_n)
 
         self.inner_fail_count = 0
@@ -241,7 +242,8 @@ class AugmentedLagrangianFramework(object):
 
         self.verbose = kwargs.get('verbose', True)
         self.hformat = '%-5s  %8s  %8s  %8s  %8s  %8s  %8s  %8s'
-        self.header  = self.hformat % ('Iter','f(x)','|pg(x)|','eps_g','|c(x)|','eps_c', 'penalty', 'sbmin')
+        self.header  = self.hformat % ('Iter','f(x)','|pg(x)|','eps_g',
+                                       '|c(x)|','eps_c', 'penalty', 'sbmin')
         self.hlen   = len(self.header)
         self.hline  = '-' * self.hlen
         self.format = '%-5d  %8.1e  %8.1e  %8.1e  %8.1e  %8.1e  %8.1e  %5d'
@@ -257,13 +259,13 @@ class AugmentedLagrangianFramework(object):
     def UpdateMultipliers(self, convals, status):
 
         '''
-        Infeasibility is sufficiently small; update multipliers and 
+        Infeasibility is sufficiently small; update multipliers and
         tighten feasibility and optimality tolerances
         '''
         self.alprob.pi -= self.alprob.rho*convals
         if status == 'opt':
-            # Safeguard: tighten tolerances only if desired optimality 
-            # is reached to prevent rapid decay of the tolerances from failed 
+            # Safeguard: tighten tolerances only if desired optimality
+            # is reached to prevent rapid decay of the tolerances from failed
             # inner loops
             self.eta /= self.alprob.rho**self.b_eta
             self.omega /= self.alprob.rho**self.b_omega
@@ -277,7 +279,7 @@ class AugmentedLagrangianFramework(object):
     def UpdatePenaltyParameter(self):
 
         '''
-        Large infeasibility; increase rho and reset tolerances 
+        Large infeasibility; increase rho and reset tolerances
         based on new rho.
         '''
         self.alprob.rho /= self.tau
@@ -301,8 +303,9 @@ class AugmentedLagrangianFramework(object):
 
         Pdphi = self.alprob.project_gradient(self.x,dphi)
         Pmax = np.max(np.abs(Pdphi))
+        self.pg0 = Pmax
 
-        # Specific handling for the case where the original NLP is 
+        # Specific handling for the case where the original NLP is
         # unconstrained
         if self.alprob.nlp.m == 0:
             max_cons = 0.
@@ -311,11 +314,13 @@ class AugmentedLagrangianFramework(object):
 
         self.omega = self.omega_init
         self.eta = self.eta_init
+        self.omega_opt = self.omega_rel * self.pg0
+        self.eta_opt = self.eta_rel * max_cons
 
         self.iter = 0
         self.inner_fail_count = 0
-        self.pg0 = Pmax
         self.niter_total = 0
+
 
         # Convergence check
         converged = Pmax <= self.omega_opt and max_cons <= self.eta_opt
@@ -349,7 +354,7 @@ class AugmentedLagrangianFramework(object):
             Pmax_new = np.max(np.abs(Pdphi))
             convals_new = self.alprob.nlp.cons(self.x)
 
-            # Specific handling for the case where the original NLP is 
+            # Specific handling for the case where the original NLP is
             # unconstrained
             if self.alprob.nlp.m == 0:
                 max_cons_new = 0.
@@ -379,7 +384,7 @@ class AugmentedLagrangianFramework(object):
 
                 self.UpdateMultipliers(convals_new,SBMIN.status)
 
-                # If optimality of the inner loop is not achieved within 10 
+                # If optimality of the inner loop is not achieved within 10
                 # major iterations, exit immediately
                 if self.inner_fail_count == 10:
                     self.status = 'Stall'
