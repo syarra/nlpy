@@ -107,6 +107,23 @@ class AugmentedLagrangian(NLPModel):
         return q
 
 
+    def magical_step(self, x, g, **kwargs):
+        '''
+        Compute a "magical step" to improve the convergence rate of the 
+        inner minimization algorithm. This step minimizes the augmented 
+        Lagrangian with respect to the slack variables only for a fixed set 
+        of decision variables.
+        '''
+
+        on = self.nlp.original_n
+        m_step = np.zeros(self.n)
+        m_step[on:] = -g[on:]/self.rho
+        # Assuming slack variables are restricted to [0,+inf) interval
+        m_step[on:] = np.where(-m_step[on:] > x[on:], -x[on:], m_step[on:])
+
+        return m_step
+
+
     def hprod(self, x, z, v, **kwargs):
         '''
         Compute the Hessian-vector product of the Hessian of the augmented

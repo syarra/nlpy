@@ -79,6 +79,14 @@ class SBMINFramework:
         self.nbk     = kwargs.get('nbk', 5)
         self.alpha   = 1.0
 
+        # Use magical steps to update slack variables
+        self.magic_steps_cons = kwargs.get('magic_steps_cons',False)
+        self.magic_steps_agg = kwargs.get('magic_steps_agg',False)
+
+        # If both options are set, use the aggressive type
+        if self.magic_steps_agg and self.magic_steps_cons:
+            self.magic_steps_cons = False
+
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', max(1000, 10*self.nlp.n))
         self.verbose = kwargs.get('verbose', True)
@@ -196,6 +204,11 @@ class SBMINFramework:
             x_trial = self.x.copy() + step
             f_trial = nlp.obj(x_trial)
 
+            # Aggressive magical steps 
+            # (i.e. the magical steps influence the trust region size)
+            # if self.magic_steps_agg:
+            #     m_step = nlp.magical_step(self.x, self.g)
+
             rho  = self.TR.Rho(self.f, f_trial, m)
             step_status = 'Rej'
 
@@ -204,6 +217,11 @@ class SBMINFramework:
                 # Trust-region step is successful
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
+
+                if self.magic_steps_cons:
+                    m_step = nlp.magical_step(self.x, self.g)
+                    self.x += m_step
+                    self.true_step += m_step
 
                 self.f = nlp.obj(self.x)
                 self.g = nlp.grad(self.x)
@@ -235,6 +253,13 @@ class SBMINFramework:
                         # Backtrack succeeded, update the current point
                         self.x = x_trial
                         self.true_step *= alpha
+
+                        # Magical steps can also apply if backtracking succeeds
+                        if self.magic_steps_cons:
+                            m_step = nlp.magical_step(self.x, self.g)
+                            self.x += m_step
+                            self.true_step += m_step
+
                         self.f = f_trial
                         self.g = nlp.grad(self.x)
                         self.pgnorm = np.max(np.abs( \
