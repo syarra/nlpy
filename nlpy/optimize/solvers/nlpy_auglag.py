@@ -1,20 +1,17 @@
 #!/usr/bin/env python
 
-from nlpy.model import amplpy
-from nlpy.optimize.solvers.auglag import AugmentedLagrangianFramework
+from nlpy.model.mfnlp import MFAmplModel
+from nlpy.optimize.solvers.sbmin import SBMINFramework
+from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework
 from nlpy.tools.timing import cputime
 import numpy
 import sys
 
-def pass_to_lancelot(nlp, showbanner=True):
-
-    if nlp.nrangeC > 0:         # Check for range constrained problem
-        sys.stderr.write('%s has %d general range constraints\n' % (ProblemName, nlp.nrangeC))
-        return None
+def pass_to_auglag(nlp, showbanner=True):
 
     t = cputime()
 
-    LANCELOT = AugmentedLagrangianFramework(nlp, approxHess=True, printlevel=2)
+    AUGLAG = AugmentedLagrangianFramework(nlp, SBMINFramework, maxouter=50)
     t_setup = cputime() - t                  # Setup time
 
     if showbanner:
@@ -24,21 +21,21 @@ def pass_to_lancelot(nlp, showbanner=True):
         print '------------------------------------------'
         print
 
-    LANCELOT.solve()
+    AUGLAG.solve()
 
     # Output final statistics
     print
-    print 'Final variables:', LANCELOT.x
+    print 'Final variables:', AUGLAG.x
     print
     print '-------------------------------'
     print 'LANCELOT: End of Execution'
     print '  Problem                               : %-s' % ProblemName
     print '  Dimension                             : %-d' % nlp.n
-    print '  Initial/Final Objective               : %-g/%-g' % (LANCELOT.f0, LANCELOT.f)
-    print '  Initial/Final Projected Gradient Norm : %-g/%-g' % (LANCELOT.pg0, LANCELOT.pgnorm)
-    print '  Number of iterations        : %-d' % LANCELOT.iter
+    print '  Initial/Final Objective               : %-g/%-g' % (AUGLAG.f0, AUGLAG.f)
+    print '  Initial/Final Projected Gradient Norm : %-g/%-g' % (AUGLAG.pg0, AUGLAG.pgnorm)
+    print '  Number of iterations        : %-d' % AUGLAG.niter_total
     print '-------------------------------'
-    return LANCELOT
+    return AUGLAG
 
 if len(sys.argv) < 2:
     sys.stderr.write('Please specify model name\n')
@@ -48,6 +45,6 @@ if len(sys.argv) < 2:
 numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 
 for ProblemName in sys.argv[1:]:
-    nlp = amplpy.AmplModel(ProblemName)         # Create a model
-    LANCELOT = pass_to_lancelot(nlp, showbanner=True)
+    nlp = MFAmplModel(ProblemName)         # Create a model
+    AUGLAG = pass_to_auglag(nlp, showbanner=True)
     nlp.close()                                 # Close connection with model
