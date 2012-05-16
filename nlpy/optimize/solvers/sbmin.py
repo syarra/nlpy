@@ -217,14 +217,16 @@ class SBMINFramework:
                 # Trust-region step is successful
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
+                self.f = f_trial
+                self.g = nlp.grad(self.x)
 
                 if self.magic_steps_cons:
                     m_step = nlp.magical_step(self.x, self.g)
                     self.x += m_step
                     self.true_step += m_step
+                    self.f = nlp.obj(self.x)
+                    self.g = nlp.grad(self.x)
 
-                self.f = nlp.obj(self.x)
-                self.g = nlp.grad(self.x)
                 self.pgnorm = np.max(np.abs( \
                                         self.projected_gradient(self.x,self.g)))
                 step_status = 'Acc'
@@ -251,17 +253,19 @@ class SBMINFramework:
                         step_status = 'N-Y Rej'
                     else:
                         # Backtrack succeeded, update the current point
-                        self.x = x_trial
                         self.true_step *= alpha
+                        self.x = x_trial
+                        self.f = f_trial
+                        self.g = nlp.grad(self.x)
 
                         # Magical steps can also apply if backtracking succeeds
                         if self.magic_steps_cons:
                             m_step = nlp.magical_step(self.x, self.g)
                             self.x += m_step
                             self.true_step += m_step
+                            self.f = nlp.obj(self.x)
+                            self.g = nlp.grad(self.x)
 
-                        self.f = f_trial
-                        self.g = nlp.grad(self.x)
                         self.pgnorm = np.max(np.abs( \
                                             self.projected_gradient(self.x,self.g)))
                         step_status = 'N-Y Acc'
