@@ -79,6 +79,14 @@ class SBMINFramework:
         self.nbk     = kwargs.get('nbk', 5)
         self.alpha   = 1.0
 
+        # Use magical steps to update slack variables
+        self.magic_steps_cons = kwargs.get('magic_steps_cons',False)
+        self.magic_steps_agg = kwargs.get('magic_steps_agg',False)
+
+        # If both options are set, use the aggressive type
+        if self.magic_steps_agg and self.magic_steps_cons:
+            self.magic_steps_cons = False
+
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
@@ -197,7 +205,20 @@ class SBMINFramework:
             x_trial = self.x.copy() + step
             f_trial = nlp.obj(x_trial)
 
+            # Aggressive magical steps 
+            # (i.e. the magical steps can influence the trust region size)
+            if self.magic_steps_agg:
+                x_inter = x_trial.copy()
+                f_inter = f_trial
+                g_inter = nlp.grad(x_inter)
+                m_step = nlp.magical_step(x_inter, g_inter)
+                x_trial = x_inter + m_step
+                self.true_step += m_step
+                f_trial = nlp.obj(x_trial)
+                m = m - f_inter + f_trial
+
             rho  = self.TR.Rho(self.f, f_trial, m)
+
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
@@ -205,9 +226,16 @@ class SBMINFramework:
                 # Trust-region step is successful
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
-
-                self.f = nlp.obj(self.x)
+                self.f = f_trial
                 self.g = nlp.grad(self.x)
+
+                if self.magic_steps_cons:
+                    m_step = nlp.magical_step(self.x, self.g)
+                    self.x += m_step
+                    self.true_step += m_step
+                    self.f = nlp.obj(self.x)
+                    self.g = nlp.grad(self.x)
+
                 self.pgnorm = np.max(np.abs( \
                                         self.projected_gradient(self.x,self.g)))
                 step_status = 'Acc'
@@ -234,10 +262,19 @@ class SBMINFramework:
                         step_status = 'N-Y Rej'
                     else:
                         # Backtrack succeeded, update the current point
-                        self.x = x_trial
                         self.true_step *= alpha
+                        self.x = x_trial
                         self.f = f_trial
                         self.g = nlp.grad(self.x)
+
+                        # Conservative magical steps can also apply if backtracking succeeds
+                        if self.magic_steps_cons:
+                            m_step = nlp.magical_step(self.x, self.g)
+                            self.x += m_step
+                            self.true_step += m_step
+                            self.f = nlp.obj(self.x)
+                            self.g = nlp.grad(self.x)
+
                         self.pgnorm = np.max(np.abs( \
                                             self.projected_gradient(self.x,self.g)))
                         step_status = 'N-Y Acc'
