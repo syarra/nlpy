@@ -152,7 +152,7 @@ class SBMINFramework:
 
         self.radii = [ self.TR.Delta ]
 
-        stoptol = self.reltol * self.pg0
+        stoptol = self.reltol# * self.pg0
         step_status = None
         exitIter = exitUser = exitTR = False
         exitOptimal = self.pgnorm <= stoptol
