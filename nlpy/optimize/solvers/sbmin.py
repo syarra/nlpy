@@ -197,7 +197,7 @@ class SBMINFramework:
             x_trial = self.x.copy() + step
             f_trial = nlp.obj(x_trial)
 
-            rho  = self.TR.Rho(self.f, f_trial, m)
+            rho  = self.TR.Rho(self.f, f_trial, m, check_positive=False)
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
