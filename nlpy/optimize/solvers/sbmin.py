@@ -79,6 +79,10 @@ class SBMINFramework:
         self.nbk     = kwargs.get('nbk', 5)
         self.alpha   = 1.0
 
+        # Options for monotone descent strategy
+        self.monotone = kwargs.get('monotone', False)
+        self.nIterNonMono = kwargs.get('nIterNonMono', 25)
+
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
@@ -149,8 +153,14 @@ class SBMINFramework:
 
         # Reset initial trust-region radius.
         self.TR.Delta = np.maximum(0.1 * self.pgnorm,.2)
-
         self.radii = [ self.TR.Delta ]
+
+        # Initialize non-monotonicity parameters.
+        if not self.monotone:
+            self.log.info('Using Non monotone descent strategy')
+            fMin = fRef = fCan = self.f0
+            l = 0
+            sigRef = sigCan = 0
 
         stoptol = self.reltol * self.pg0
         step_status = None
@@ -197,7 +207,12 @@ class SBMINFramework:
             x_trial = self.x.copy() + step
             f_trial = nlp.obj(x_trial)
 
-            rho  = self.TR.Rho(self.f, f_trial, m)
+            rho  = self.TR.Rho(self.f, f_trial, m, check_positive=False)
+
+            if not self.monotone:
+                rhoHis = (fRef - f_trial)/(sigRef - m)
+                rho = max(rho, rhoHis)
+
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
@@ -205,12 +220,31 @@ class SBMINFramework:
                 # Trust-region step is successful
                 self.TR.UpdateRadius(rho, stepnorm)
                 self.x = x_trial
-
                 self.f = nlp.obj(self.x)
                 self.g = nlp.grad(self.x)
                 self.pgnorm = np.max(np.abs( \
                                         self.projected_gradient(self.x,self.g)))
                 step_status = 'Acc'
+
+                # Update non-monotonicity parameters.
+                if not self.monotone:
+                    sigRef = sigRef - m
+                    sigCan = sigCan - m
+                    if f_trial < fMin:
+                        fCan = f_trial
+                        fMin = f_trial
+                        sigCan = 0
+                        l = 0
+                    else:
+                        l = l + 1
+
+                    if f_trial > fCan:
+                        fCan = f_trial
+                        sigCan = 0
+
+                    if l == self.nIterNonMono:
+                        fRef = fCan
+                        sigRef = sigCan
 
             else:
 
