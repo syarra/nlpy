@@ -205,11 +205,19 @@ class SBMINFramework:
             f_trial = nlp.obj(x_trial)
 
             # Aggressive magical steps 
-            # (i.e. the magical steps influence the trust region size)
-            # if self.magic_steps_agg:
-            #     m_step = nlp.magical_step(self.x, self.g)
+            # (i.e. the magical steps can influence the trust region size)
+            if self.magic_steps_agg:
+                x_inter = x_trial.copy()
+                f_inter = f_trial
+                g_inter = nlp.grad(x_inter)
+                m_step = nlp.magical_step(x_inter, g_inter)
+                x_trial = x_inter + m_step
+                self.true_step += m_step
+                f_trial = nlp.obj(x_trial)
+                m = m - f_inter + f_trial
 
             rho  = self.TR.Rho(self.f, f_trial, m)
+
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
@@ -258,7 +266,7 @@ class SBMINFramework:
                         self.f = f_trial
                         self.g = nlp.grad(self.x)
 
-                        # Magical steps can also apply if backtracking succeeds
+                        # Conservative magical steps can also apply if backtracking succeeds
                         if self.magic_steps_cons:
                             m_step = nlp.magical_step(self.x, self.g)
                             self.x += m_step
