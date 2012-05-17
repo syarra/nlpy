@@ -18,7 +18,7 @@ jprod and jtprod functions
 - Automatic variable / constraint scaling
 
 - Store previous x to prevent repeated function evaluations at the same point
-	- early version complete May 16, 2012, more advanced work in progress
+	- early version complete May 16, 2012, more advanced work in progress, see below
 
 - Detect infeasible problems reliably (use Lancelot A strategy?)
 	- simple implementation added May 16, 2012
@@ -29,7 +29,7 @@ More "radical" / experimental ideas:
 - "Smart" selection of initial TR radius for each major iteration
 
 - Use SHA1 key for storing x (see above) for performance
-	- early version implemented May 17, 2012 (local branch only)
+	- implemented May 17, 2012
 
 - "Smart" selection of initial penalty parameter
 
