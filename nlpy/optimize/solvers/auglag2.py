@@ -27,6 +27,7 @@ from nlpy.model.mfnlp import MFModel, SlackNLP
 from nlpy.model.amplpy import AmplModel
 from nlpy.optimize.solvers.lbfgs import LBFGS
 from nlpy.optimize.solvers.lsr1 import LSR1
+from nlpy.optimize.solvers.lsqr import LSQRFramework
 from nlpy.krylov.linop import PysparseLinearOperator, SimpleLinearOperator
 from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
@@ -133,6 +134,26 @@ class AugmentedLagrangian(NLPModel):
         return m_step
 
 
+    def lsqr_multipliers(self, x, **kwargs):
+        '''
+        Compute a least-squares estimate of the Lagrange multipliers for the 
+        current point. This may lead to faster convergence of the augmented 
+        Lagrangian algorithm, at the expense of more Jacobian-vector products.
+        '''
+
+        nlp = self.nlp
+        m = nlp.m
+        n = nlp.n
+
+        lim = max(2*m,2*n)
+        J = nlp.jac(x)
+        lsqr = LSQRFramework(J.T)
+        lsqr.solve(nlp.grad(x), itnlim=lim, damp=1.e-4)
+        if lsqr.optimal:
+            self.pi = lsqr.x.copy()
+        return
+
+
     def hprod(self, x, z, v, **kwargs):
         '''
         Compute the Hessian-vector product of the Hessian of the augmented
@@ -236,6 +257,8 @@ class AugmentedLagrangianFramework(object):
         self.alprob = AugmentedLagrangian(nlp,**kwargs)
         self.x = kwargs.get('x0', self.alprob.x0.copy())
 
+        self.least_squares_pi = kwargs.get('least_squares_pi',False)
+
         self.innerSolver = innerSolver
 
         self.phi0 = None
@@ -324,6 +347,10 @@ class AugmentedLagrangianFramework(object):
 
         # Move starting point into the feasible box
         self.x = self.alprob.project_x(self.x)
+
+        # Use a least-squares estimate of the multipliers to start (if requested)
+        if self.least_squares_pi:
+            self.alprob.lsqr_multipliers(self.x)
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
