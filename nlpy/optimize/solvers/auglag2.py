@@ -93,6 +93,15 @@ class AugmentedLagrangian(NLPModel):
     # end def
 
 
+    def project_x(self, x, **kwargs):
+        '''
+        Project the given x vector on to the bound-constrained space and 
+        return the result. This function is useful when the starting point 
+        of the optimization is not initially within the bounds.
+        '''
+        return np.maximum(np.minimum(x,self.Uvar),self.Lvar)
+
+
     def project_gradient(self, x, g, **kwargs):
         '''
         Project the provided gradient on to the bound-constrained space and
@@ -313,6 +322,9 @@ class AugmentedLagrangianFramework(object):
 
         original_n = self.alprob.nlp.original_n
 
+        # Move starting point into the feasible box
+        self.x = self.alprob.project_x(self.x)
+
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
         dphi = self.alprob.grad(self.x)
@@ -328,16 +340,17 @@ class AugmentedLagrangianFramework(object):
             max_cons = 0.
         else:
             max_cons = np.max(np.abs(self.alprob.nlp.cons(self.x)))
+            cons_norm_ref = max_cons
 
         self.omega = self.omega_init
         self.eta = self.eta_init
-        self.omega_opt = self.omega_rel * self.pg0
-        self.eta_opt = self.eta_rel * max_cons
+        self.omega_opt = self.omega_rel# * self.pg0
+        self.eta_opt = self.eta_rel# * max_cons
 
         self.iter = 0
         self.inner_fail_count = 0
         self.niter_total = 0
-
+        infeas_iter = 0
 
         # Convergence check
         converged = Pmax <= self.omega_opt and max_cons <= self.eta_opt
@@ -401,6 +414,10 @@ class AugmentedLagrangianFramework(object):
 
                 self.UpdateMultipliers(convals_new,SBMIN.status)
 
+                # Update reference constraint norm on successful reduction
+                cons_norm_ref = max_cons_new
+                infeas_iter = 0
+
                 # If optimality of the inner loop is not achieved within 10
                 # major iterations, exit immediately
                 if self.inner_fail_count == 10:
@@ -414,6 +431,17 @@ class AugmentedLagrangianFramework(object):
 
                 self.UpdatePenaltyParameter()
                 self.log.debug('******  Keeping current multipliers estimates  ******\n')
+
+                if max_cons_new > 0.99*cons_norm_ref:
+                    infeas_iter += 1
+                else:
+                    cons_norm_ref = max_cons_new
+                    infeas_iter = 0
+
+                if infeas_iter == 5:
+                    self.status = 'Infeas'
+                    self.log.debug('Problem appears to be infeasible, exiting ... \n')
+                    break
 
             # end if
 

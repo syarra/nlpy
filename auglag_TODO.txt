@@ -7,12 +7,16 @@ Matrix-Free Augmented Lagrangian TODO List
 	- implemented, May 15, 2012
 
 - Magical steps for slack variables
+	- implemented, May 16, 2012
 
 - Nonmonotone update strategy
 
 - Automatic variable / constraint scaling
 
 - Store previous x to prevent repeated function evaluations at the same point
+
+- Detect infeasible problems reliably (use Lancelot A strategy?)
+	- simple implementation added May 16, 2012
 
 
 More "radical" / experimental ideas:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from nlpy.model.mfnlp import MFAmplModel
+from nlpy.model.amplpy import MFAmplModel
 from nlpy.optimize.solvers.sbmin import SBMINFramework
 from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework
 from nlpy.tools.timing import cputime
