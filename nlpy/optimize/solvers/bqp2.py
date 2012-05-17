@@ -285,16 +285,23 @@ class BQP(object):
             # Follow the direction of negative curvature until it hits a bound
             aup = (self.Uvar[nonzeroind]-x[nonzeroind])/nonzerod
             aupp = aup[aup>0]
-            if aupp.size != 0:
-                aupmin = np.min(aupp)
-            else: aupmin = np.infty
             alow = (self.Lvar[nonzeroind]-x[nonzeroind])/nonzerod
             alowp = alow[alow>0]
-            if alowp.size != 0:
-                alowmin = np.min(alowp)
-            else: alowmin = np.infty
-            alpha = np.minimum(alowmin, aupmin)
-            x += alpha*d
+            if aupp.size != 0:
+                aupmin = np.min(aupp)
+                if alowp.size != 0:
+                    alowmin = np.min(alowp)
+                    alpha = np.minimum(alowmin, aupmin)
+                else: alpha=aupmin
+            else:
+                if alowp.size != 0:
+                    alpha = np.min(alowp)
+                else: alpha=0.
+
+            try:
+                x += alpha*d
+            except:
+                pdb.set_trace()
 
         # Do another projected gradient update
         (x, (lower,upper)) = self.projected_gradient(x)
