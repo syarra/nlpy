@@ -13,6 +13,7 @@ __docformat__ = 'restructuredtext'
 import os, sys
 import pdb
 import copy
+import hashlib
 
 # =============================================================================
 # External Python modules
@@ -158,6 +159,7 @@ class SlackNLP( MFModel ):
 
         # Saved values (private).
         self._last_x = np.infty * np.ones(self.original_n,'d')
+        self._last_x_hash = hashlib.sha1(self._last_x).hexdigest()
         self._last_obj = None
         self._last_cons = None
         self._last_grad = None
@@ -181,7 +183,9 @@ class SlackNLP( MFModel ):
         subvector of `x`.
         '''
 
-        same_x = (self._last_x == x[:self.original_n]).all()
+        x_hash = hashlib.sha1(x[:self.original_n]).hexdigest()
+        same_x = self._last_x_hash == x_hash
+        # same_x = (self._last_x == x[:self.original_n]).all()
 
         if self._last_obj is not None and same_x:
             f = self._last_obj
@@ -192,6 +196,7 @@ class SlackNLP( MFModel ):
             f = self.nlp.obj(x[:self.original_n])
             self._last_obj = f
             self._last_x = x[:self.original_n].copy()
+            self._last_x_hash = x_hash
             self._last_cons = None
             self._last_grad = None
 
@@ -206,7 +211,9 @@ class SlackNLP( MFModel ):
         '''
         g = np.zeros(self.n)
 
-        same_x = (self._last_x == x[:self.original_n]).all()
+        x_hash = hashlib.sha1(x[:self.original_n]).hexdigest()
+        same_x = self._last_x_hash == x_hash
+        # same_x = (self._last_x == x[:self.original_n]).all()
 
         if self._last_grad is not None and same_x:
             g[:self.original_n] = self._last_grad
@@ -217,6 +224,7 @@ class SlackNLP( MFModel ):
             g[:self.original_n] = self.nlp.grad(x[:self.original_n])
             self._last_obj = None
             self._last_x = x[:self.original_n].copy()
+            self._last_x_hash = x_hash
             self._last_cons = None
             self._last_grad = g[:self.original_n].copy()
 
@@ -257,7 +265,9 @@ class SlackNLP( MFModel ):
         s_up  = x[mslow:msup]  # len(s_up)  = n_con_up
 
         c = np.empty(m)
-        same_x = (self._last_x == x[:self.original_n]).all()
+        x_hash = hashlib.sha1(x[:self.original_n]).hexdigest()
+        same_x = self._last_x_hash == x_hash
+        # same_x = (self._last_x == x[:self.original_n]).all()
         if self._last_cons is not None and same_x:
             c[:om] = self._last_cons
         elif self._last_cons is None and same_x:
@@ -267,6 +277,7 @@ class SlackNLP( MFModel ):
             c[:om] = nlp.cons(x[:on])
             self._last_obj = None
             self._last_x = x[:self.original_n].copy()
+            self._last_x_hash = x_hash
             self._last_cons = c[:om].copy()
             self._last_grad = None
 
