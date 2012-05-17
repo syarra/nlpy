@@ -156,6 +156,12 @@ class SlackNLP( MFModel ):
         self.pi0 = np.zeros(self.m)
         self.pi0[:self.original_m] = self.original_pi0[:]
 
+        # Saved values (private).
+        self._last_x = np.infty * np.ones(self.original_n,'d')
+        self._last_obj = None
+        self._last_cons = None
+        self._last_grad = None
+
         return
 
 
@@ -174,7 +180,22 @@ class SlackNLP( MFModel ):
         specialized since the original objective function only depends on a
         subvector of `x`.
         '''
-        return self.nlp.obj(x[:self.original_n])
+
+        same_x = (self._last_x == x[:self.original_n]).all()
+
+        if self._last_obj is not None and same_x:
+            f = self._last_obj
+        elif self._last_obj is None and same_x:
+            f = self.nlp.obj(self._last_x)
+            self._last_obj = f
+        else:
+            f = self.nlp.obj(x[:self.original_n])
+            self._last_obj = f
+            self._last_x = x[:self.original_n].copy()
+            self._last_cons = None
+            self._last_grad = None
+
+        return f
 
 
     def grad(self, x):
@@ -184,7 +205,20 @@ class SlackNLP( MFModel ):
         depends on a subvector of `x`.
         '''
         g = np.zeros(self.n)
-        g[:self.original_n] = self.nlp.grad(x[:self.original_n])
+
+        same_x = (self._last_x == x[:self.original_n]).all()
+
+        if self._last_grad is not None and same_x:
+            g[:self.original_n] = self._last_grad
+        elif self._last_grad is None and same_x:
+            g[:self.original_n] = self.nlp.grad(self._last_x)
+            self._last_grad = g[:self.original_n].copy()
+        else:
+            g[:self.original_n] = self.nlp.grad(x[:self.original_n])
+            self._last_obj = None
+            self._last_x = x[:self.original_n].copy()
+            self._last_cons = None
+            self._last_grad = g[:self.original_n].copy()
 
         return g
 
@@ -223,7 +257,19 @@ class SlackNLP( MFModel ):
         s_up  = x[mslow:msup]  # len(s_up)  = n_con_up
 
         c = np.empty(m)
-        c[:om] = nlp.cons(x[:on])
+        same_x = (self._last_x == x[:self.original_n]).all()
+        if self._last_cons is not None and same_x:
+            c[:om] = self._last_cons
+        elif self._last_cons is None and same_x:
+            c[:om] = nlp.cons(self._last_x)
+            self._last_cons = c[:om].copy()
+        else:
+            c[:om] = nlp.cons(x[:on])
+            self._last_obj = None
+            self._last_x = x[:self.original_n].copy()
+            self._last_cons = c[:om].copy()
+            self._last_grad = None
+
         c[om:om+nrangeC] = c[rangeC]
 
         c[equalC] -= nlp.Lcon[equalC]
