@@ -5,6 +5,7 @@ Matrix-Free Augmented Lagrangian TODO List
 
 - Counters for calls to original NLP objective, constraint, gradient, and 
 jprod and jtprod functions
+	- done locally for MFModel May 17, 2012; already in MFAmplModel
 
 - Nocedal-Yuan backtracking
 	- implemented, May 15, 2012
@@ -37,3 +38,5 @@ More "radical" / experimental ideas:
 - Extrapolation of x near a solution with good multiplier estimates
 
 - More interesting ways of computing the step???
+
+- Interface with full CUTEr test set???
