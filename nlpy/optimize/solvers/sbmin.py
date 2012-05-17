@@ -152,7 +152,7 @@ class SBMINFramework:
 
         self.radii = [ self.TR.Delta ]
 
-        stoptol = self.reltol# * self.pg0
+        stoptol = self.reltol# * self.pg0 + 1e-5
         step_status = None
         exitIter = exitUser = exitTR = False
         exitOptimal = self.pgnorm <= stoptol
@@ -197,7 +197,8 @@ class SBMINFramework:
             x_trial = self.x.copy() + step
             f_trial = nlp.obj(x_trial)
 
-            rho  = self.TR.Rho(self.f, f_trial, m)
+            rho  = self.TR.Rho(self.f, f_trial, m)#, check_positive=False)
+            
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
@@ -334,7 +335,6 @@ class TrustBQPModel(NLPModel):
         Delta = delta*np.ones(nlp.n)
         Lvar = np.maximum(nlp.Lvar - x_k, -Delta)
         Uvar = np.minimum(nlp.Uvar - x_k, Delta)
-
         NLPModel.__init__(self, n=nlp.n, m=nlp.m, name='TrustRegionSubproblem',
                           Lvar=Lvar ,Uvar =Uvar)
         self.nlp = nlp
