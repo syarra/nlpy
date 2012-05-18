@@ -68,9 +68,9 @@ class TruncatedCG:
         self.dir = None
 
         # Formats for display
-        self.hd_fmt = ' %-5s  %9s  %8s  %8s'
-        self.header = self.hd_fmt % ('Iter', '<r,g>', 'curv', 'model')
-        self.fmt = ' %-5d  %9.2e  %8.2e  %8.2e'
+        self.hd_fmt = ' %-5s  %9s  %8s'
+        self.header = self.hd_fmt % ('Iter', '<r,g>', 'curv')
+        self.fmt = ' %-5d  %9.2e  %8.2e'
 
         # Create a logger for solver.
         self.log = logging.getLogger('nlpy.pcg')
@@ -182,7 +182,7 @@ class TruncatedCG:
             pHp = np.dot(p, Hp)
 
             # if debug:
-            self.log.debug(self.fmt % (k, ry, pHp, model_value(self.H, self.g, s)))
+            self.log.debug(self.fmt % (k, ry, pHp))
 
             # Compute steplength to the boundary.
             if radius is not None:
@@ -251,7 +251,7 @@ class TruncatedCG:
 
         # Output info about the last iteration.
         # if debug:
-        self.log.debug(self.fmt % (k, ry, pHp, model_value(self.H, self.g, s)))
+        self.log.debug(self.fmt % (k, ry, pHp))
 
         if k < maxiter and not onBoundary:
             self.status = 'residual small'

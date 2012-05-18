@@ -80,10 +80,20 @@ if len(sys.argv) < 2:
     sys.stderr.write('Please specify model name\n')
     sys.exit(-1)
 
+if len(sys.argv) < 3:
+    sys.stderr.write('Please specify the logging level of detail\n')
+    sys.exit(-1)
+
 # Set printing standards for arrays
 numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 
-for ProblemName in sys.argv[1:]:
-    nlp = MFAmplModel(ProblemName)         # Create a model
-    AUGLAG = pass_to_auglag(nlp, showbanner=True, loglevel=4)
-    nlp.close()                                 # Close connection with model
+# for ProblemName in sys.argv[1:]:
+#     nlp = MFAmplModel(ProblemName)         # Create a model
+#     AUGLAG = pass_to_auglag(nlp, showbanner=True, loglevel=2)
+#     nlp.close()                                 # Close connection with model
+
+ProblemName = sys.argv[1]
+loglevel = sys.argv[2]
+nlp = MFAmplModel(ProblemName)         # Create a model
+AUGLAG = pass_to_auglag(nlp, showbanner=True, loglevel=loglevel)
+nlp.close()                                 # Close connection with model
