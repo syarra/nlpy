@@ -401,7 +401,7 @@ class BQP(object):
                 # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
                 nc_dir = np.zeros(n)
                 nc_dir[free_vars] = cg.dir
-                (x, (lower,upper)) = self.to_boundary(x+d,nc_dir,free_vars)
+                (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
             else:
                 # 4. Update x using projected linesearch with initial step=1.
                 (x, qval) = self.projected_linesearch(x, g, d, qval)
@@ -439,7 +439,7 @@ class BQP(object):
                     # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
                     nc_dir = np.zeros(n)
                     nc_dir[free_vars] = cg.dir
-                    (x, (lower,upper)) = self.to_boundary(x+d,nc_dir,free_vars)
+                    (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
                 else:
                     # 4. Update x using projected linesearch with initial step=1.
                     (x, qval) = self.projected_linesearch(x, g, d, qval)

@@ -93,7 +93,7 @@ numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 #     nlp.close()                                 # Close connection with model
 
 ProblemName = sys.argv[1]
-loglevel = sys.argv[2]
+loglevel = int(sys.argv[2])
 nlp = MFAmplModel(ProblemName)         # Create a model
 AUGLAG = pass_to_auglag(nlp, showbanner=True, loglevel=loglevel)
 nlp.close()                                 # Close connection with model
