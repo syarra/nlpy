@@ -6,8 +6,9 @@ from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework
 from nlpy.tools.timing import cputime
 import numpy
 import sys
+import logging
 
-def pass_to_auglag(nlp, showbanner=True):
+def pass_to_auglag(nlp, showbanner=True, loglevel=2):
 
     t = cputime()
 
@@ -21,7 +22,44 @@ def pass_to_auglag(nlp, showbanner=True):
         print '------------------------------------------'
         print
 
+    # Create loggers for studying output
+    fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
+    hndlr = logging.FileHandler('%-s_debug_%d.log' % (ProblemName,loglevel) ,mode='w')
+    # hndlr = logging.StreamHandler()
+    hndlr.setLevel(logging.DEBUG)
+    hndlr.setFormatter(fmt)
+
+    # Configure auglag logger.
+    if loglevel >= 1:
+        auglaglogger = logging.getLogger('nlpy.auglag')
+        auglaglogger.setLevel(logging.DEBUG)
+        auglaglogger.addHandler(hndlr)
+        auglaglogger.propagate = False
+
+    # Configure sbmin logger.
+    if loglevel >= 2:
+        sbminlogger = logging.getLogger('nlpy.sbmin')
+        sbminlogger.setLevel(logging.DEBUG)
+        sbminlogger.addHandler(hndlr)
+        sbminlogger.propagate = False
+
+    # Configure bqp logger.
+    if loglevel >= 3:
+        bqplogger = logging.getLogger('nlpy.bqp')
+        bqplogger.setLevel(logging.DEBUG)
+        bqplogger.addHandler(hndlr)
+        bqplogger.propagate = False
+
+    # Configure pcg logger
+    if loglevel >= 4:
+        pcglogger = logging.getLogger('nlpy.pcg')
+        pcglogger.setLevel(logging.DEBUG)
+        pcglogger.addHandler(hndlr)
+        pcglogger.propagate = False
+
     AUGLAG.solve()
+
+    t_solve = cputime() - t - t_setup
 
     # Output final statistics
     print
@@ -34,6 +72,7 @@ def pass_to_auglag(nlp, showbanner=True):
     print '  Initial/Final Objective               : %-g/%-g' % (AUGLAG.f0, AUGLAG.f)
     print '  Initial/Final Projected Gradient Norm : %-g/%-g' % (AUGLAG.pg0, AUGLAG.pgnorm)
     print '  Number of iterations        : %-d' % AUGLAG.niter_total
+    print '  Solution time               : %-g s' % t_solve
     print '-------------------------------'
     return AUGLAG
 
@@ -46,5 +85,5 @@ numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 
 for ProblemName in sys.argv[1:]:
     nlp = MFAmplModel(ProblemName)         # Create a model
-    AUGLAG = pass_to_auglag(nlp, showbanner=True)
+    AUGLAG = pass_to_auglag(nlp, showbanner=True, loglevel=4)
     nlp.close()                                 # Close connection with model
