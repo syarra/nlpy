@@ -92,6 +92,17 @@ class AugmentedLagrangian(NLPModel):
         return algrad
     # end def
 
+    def lgrad(self, x, **kwargs):
+        '''
+        Evaluate Lagrangian gradient.
+        '''
+        nlp = self.nlp
+        J = nlp.jac(x)
+        cons = nlp.cons(x)
+        lgrad = nlp.grad(x) - J.T * self.pi
+        return lgrad
+    # end def
+
 
     def project_x(self, x, **kwargs):
         '''
@@ -238,10 +249,6 @@ class AugmentedLagrangianFramework(object):
 
         self.innerSolver = innerSolver
 
-        self.phi0 = None
-        self.dphi0 = None
-        self.dphi0norm = None
-
         self.tau = kwargs.get('tau', 0.1)
         self.omega = None
         self.eta = None
@@ -327,11 +334,14 @@ class AugmentedLagrangianFramework(object):
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
-        dphi = self.alprob.grad(self.x)
-        self.f0 = self.alprob.nlp.obj(self.x[:original_n])
+        #dphi = self.alprob.grad(self.x)
+        dL = self.alprob.lgrad(self.x)
+        self.f = self.f0 = self.alprob.nlp.obj(self.x[:original_n])
 
-        Pdphi = self.alprob.project_gradient(self.x,dphi)
-        Pmax = np.max(np.abs(Pdphi))
+        #Pdphi = self.alprob.project_gradient(self.x,dphi)
+        #Pmax = np.max(np.abs(Pdphi))
+        PdL = self.alprob.project_gradient(self.x,dL)
+        Pmax = np.max(np.abs(PdL))
         self.pg0 = Pmax
 
         # Specific handling for the case where the original NLP is
@@ -344,8 +354,8 @@ class AugmentedLagrangianFramework(object):
 
         self.omega = self.omega_init
         self.eta = self.eta_init
-        self.omega_opt = self.omega_rel# * self.pg0
-        self.eta_opt = self.eta_rel# * max_cons
+        self.omega_opt = self.omega_rel * self.pg0 + 1e-7
+        self.eta_opt = self.eta_rel * max_cons + 1e-7
 
         self.iter = 0
         self.inner_fail_count = 0
@@ -379,9 +389,12 @@ class AugmentedLagrangianFramework(object):
             self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.niter_total += SBMIN.iter
 
-            dphi = self.alprob.grad(self.x)
-            Pdphi = self.alprob.project_gradient(self.x,dphi)
-            Pmax_new = np.max(np.abs(Pdphi))
+            #dphi = self.alprob.grad(self.x)
+            #Pdphi = self.alprob.project_gradient(self.x,dphi)
+            #Pmax_new = np.max(np.abs(Pdphi))
+            dL = self.alprob.lgrad(self.x)
+            PdL = self.alprob.project_gradient(self.x,dL)
+            Pmax_new = np.max(np.abs(PdL))
             convals_new = self.alprob.nlp.cons(self.x)
 
             # Specific handling for the case where the original NLP is
