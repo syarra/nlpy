@@ -318,7 +318,10 @@ class BQP(object):
         self.stoptol = kwargs.get('stoptol', 1.0e-5)
 
         # Compute initial data.
+
+        self.log.debug('q before initial x projection = %8.2g' % qp.obj(qp.x0))
         x = self.project(qp.x0)
+        self.log.debug('q after initial x projection = %8.2g' % qp.obj(x))
         lower, upper = self.get_active_set(x)
         iter = 0
 
@@ -351,6 +354,7 @@ class BQP(object):
             (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
             g = qp.grad(x)
             qval = qp.obj(x)
+            self.log.debug('q after projected gradient = %8.2g' % qval)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
 
@@ -384,19 +388,25 @@ class BQP(object):
             # At this point, CG returned from a clean user exit or
             # because its original stopping test was triggered.
             self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
+            if cg.status == 'residual small':
+                self.log.debug('CG residual = %g, pHp = %g' % (cg.ry**0.5,cg.pHp))
 
             # 3. Expand search direction.
             d = np.zeros(n)
             d[free_vars] = cg.step
 
             if cg.infDescent and cg.step.size != 0:
-                self.log.debug('iter :', iter,
-                        '  Negative curvature detected (%d its)' % cg.niter)
+                self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
 
-                (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+                # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+                nc_dir = np.zeros(n)
+                nc_dir[free_vars] = cg.dir
+                (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
             else:
                 # 4. Update x using projected linesearch with initial step=1.
                 (x, qval) = self.projected_linesearch(x, g, d, qval)
+
+            self.log.debug('q after first CG pass = %8.2g' % qp.obj(x))
 
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
@@ -425,12 +435,16 @@ class BQP(object):
                 d[free_vars] = cg.step
 
                 if cg.infDescent and cg.step.size != 0:
-                    self.log.debug('iter :', iter,
-                            '  Negative curvature detected (%d its)' % cg.niter)
-                    (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+                    self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
+                    # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+                    nc_dir = np.zeros(n)
+                    nc_dir[free_vars] = cg.dir
+                    (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
                 else:
                     # 4. Update x using projected linesearch with initial step=1.
                     (x, qval) = self.projected_linesearch(x, g, d, qval)
+
+                self.log.debug('q after second CG pass = %8.2g' % qp.obj(x))
 
                 g = qp.grad(x)
                 pg = self.pgrad(x, g=g, active_set=(lower,upper))
