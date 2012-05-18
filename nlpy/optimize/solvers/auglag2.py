@@ -351,6 +351,7 @@ class AugmentedLagrangianFramework(object):
         # Use a least-squares estimate of the multipliers to start (if requested)
         if self.least_squares_pi:
             self.alprob.lsqr_multipliers(self.x)
+            # self.log.debug('Initial multipliers = %8.4g , %8.4g' % (self.alprob.pi[0],self.alprob.pi[1]))
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
@@ -453,6 +454,7 @@ class AugmentedLagrangianFramework(object):
                     break
 
                 self.log.debug('******  Updating multipliers estimates  ******\n')
+                # self.log.debug('pi = %g , %g' % (self.alprob.pi[0],self.alprob.pi[1]))
 
             else:
 
