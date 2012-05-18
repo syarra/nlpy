@@ -432,7 +432,7 @@ class AugmentedLagrangianFramework(object):
                 self.UpdatePenaltyParameter()
                 self.log.debug('******  Keeping current multipliers estimates  ******\n')
 
-                if max_cons_new > 0.99*cons_norm_ref:
+                if max_cons_new > 0.99*cons_norm_ref and self.iter != 1:
                     infeas_iter += 1
                 else:
                     cons_norm_ref = max_cons_new
