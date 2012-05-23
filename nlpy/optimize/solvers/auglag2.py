@@ -260,8 +260,8 @@ class AugmentedLagrangianFramework(object):
         self.b_omega = kwargs.get('b_omega',1.)
         self.a_eta = kwargs.get('a_eta',0.1)
         self.b_eta = kwargs.get('b_eta',0.9)
-        self.omega_rel = kwargs.get('omega_rel',1.e-7)
-        self.eta_rel = kwargs.get('eta_rel',1.e-7)
+        self.omega_rel = kwargs.get('omega_rel',1.e-5)
+        self.eta_rel = kwargs.get('eta_rel',1.e-5)
 
         self.f0 = None
         self.f = +np.infty
@@ -336,7 +336,7 @@ class AugmentedLagrangianFramework(object):
         phi = self.alprob.obj(self.x)
         #dphi = self.alprob.grad(self.x)
         dL = self.alprob.lgrad(self.x)
-        self.f = self.f0 = self.alprob.nlp.obj(self.x[:original_n])
+        self.f = self.f0 = self.alprob.obj(self.x)
 
         #Pdphi = self.alprob.project_gradient(self.x,dphi)
         #Pmax = np.max(np.abs(Pdphi))
@@ -386,7 +386,6 @@ class AugmentedLagrangianFramework(object):
 
             SBMIN.Solve()
             self.x = SBMIN.x.copy()
-            self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.niter_total += SBMIN.iter
 
             #dphi = self.alprob.grad(self.x)
@@ -451,7 +450,7 @@ class AugmentedLagrangianFramework(object):
                     cons_norm_ref = max_cons_new
                     infeas_iter = 0
 
-                if infeas_iter == 5:
+                if infeas_iter == 10:
                     self.status = 'Infeas'
                     self.log.debug('Problem appears to be infeasible, exiting ... \n')
                     break
