@@ -253,7 +253,7 @@ class TruncatedCG:
         # if debug:
         self.log.debug(self.fmt % (k, ry, pHp))
 
-        if k < maxiter and not onBoundary:
+        if k < maxiter and not onBoundary and not infDescent:
             self.status = 'residual small'
         elif k >= maxiter:
             self.status = 'max iter'
