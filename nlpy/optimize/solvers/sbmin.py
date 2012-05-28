@@ -344,7 +344,7 @@ class SBMINLbfgsFramework(SBMINFramework):
     def PostIteration(self, **kwargs):
         """
         This method updates the limited-memory BFGS Hessian by appending
-        the most rencet (s,y) pair to it and possibly discarding the oldest one
+        the most recent (s,y) pair to it and possibly discarding the oldest one
         if all the memory has been used.
         """
         # LBFGS approximation should only update on *successful* iterations
