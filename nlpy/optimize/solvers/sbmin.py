@@ -304,6 +304,8 @@ class SBMINFramework:
             self.log.info(self.format % (self.iter, self.f,
                           self.pgnorm, bqpiter, rho,
                           self.radii[-2], pstatus))
+            # if self.iter >= 100:
+            #     self.log.debug('Detail f = %16.12f' % self.f)
 
             exitOptimal = self.pgnorm <= stoptol
             exitIter    = self.iter > self.maxiter
