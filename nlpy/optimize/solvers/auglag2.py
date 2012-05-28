@@ -30,8 +30,8 @@ from nlpy.optimize.solvers.lsr1 import LSR1
 from nlpy.krylov.linop import PysparseLinearOperator, SimpleLinearOperator
 from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
-from nlpy.optimize.solvers.sbmin import SBMINFramework
-from nlpy.optimize.solvers.sbmin import SBMINLbfgsFramework
+# from nlpy.optimize.solvers.sbmin import SBMINFramework
+# from nlpy.optimize.solvers.sbmin import SBMINLqnFramework
 from nlpy.tools.exceptions import UserExitRequest
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
@@ -215,6 +215,20 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
     def hrestart(self):
         self.Hessapp.restart()
         return
+
+
+# end class
+
+
+
+class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
+    '''
+    Use an LSR1 approximation instead of the LBFGS approximation.
+    '''
+
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangian.__init__(self, nlp, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=5, **kwargs)
 
 
 # end class
@@ -514,3 +528,14 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
         """
         self.alprob.hrestart()
         return
+
+
+# end class 
+
+
+
+class AugmentedLagrangianLsr1Framework(AugmentedLagrangianLbfgsFramework):
+
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianLsr1(nlp)
