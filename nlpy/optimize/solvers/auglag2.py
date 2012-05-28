@@ -32,6 +32,7 @@ from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
 from nlpy.optimize.solvers.sbmin import SBMINFramework
 from nlpy.optimize.solvers.sbmin import SBMINLbfgsFramework
+from nlpy.tools.exceptions import UserExitRequest
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
 
@@ -321,6 +322,16 @@ class AugmentedLagrangianFramework(object):
         return
 
 
+    def PostIteration(self, **kwargs):
+
+        '''
+        Override this method to perform additional work at the end of a 
+        major iteration. For example, use this method to restart an 
+        approximate Hessian.
+        '''
+        return None
+
+
     def solve(self, **kwargs):
 
         '''
@@ -464,6 +475,11 @@ class AugmentedLagrangianFramework(object):
             if self.eta < self.eta_opt:
                 self.eta = self.eta_opt
 
+            try:
+                self.PostIteration()
+            except UserExitRequest:
+                self.status = 'usr'
+
         # end while
 
         # Solution output, etc.
@@ -490,3 +506,11 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
         self.alprob = AugmentedLagrangianLbfgs(nlp)
+
+
+    def PostIteration(self, **kwargs):
+        """
+        This method restarts the limited-memory BFGS Hessian. 
+        """
+        self.alprob.hrestart()
+        return
