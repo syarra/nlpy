@@ -327,14 +327,14 @@ class SBMINFramework:
 
 
 
-class SBMINLbfgsFramework(SBMINFramework):
+class SBMINLqnFramework(SBMINFramework):
     """
     Class SBMINLbfgsFramework is a subclass of SBMINFramework. The method is
     based on a trust-region-based algorithm for nonlinear box constrained
     programming.
-    The only difference is that a limited-memory BFGS Hessian approximation
-    is used and maintained along the iterations. See class SBMINFramework for
-    more information.
+    The only difference is that a limited-memory quasi-Newton Hessian 
+    approximation is used and maintained along the iterations. See class 
+    SBMINFramework for more information.
     """
 
     def __init__(self, nlp, TR, TrSolver, **kwargs):

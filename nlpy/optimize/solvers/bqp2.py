@@ -388,7 +388,7 @@ class BQP(object):
             # At this point, CG returned from a clean user exit or
             # because its original stopping test was triggered.
             self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
-            if cg.status == 'residual small':
+            if cg.status == 'residual small' and not cg.infDescent:
                 self.log.debug('CG residual = %g, pHp = %g' % (cg.ry**0.5,cg.pHp))
 
             # 3. Expand search direction.
