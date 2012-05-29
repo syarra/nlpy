@@ -215,7 +215,12 @@ class SBMINFramework:
                 x_trial = x_inter + m_step
                 self.true_step += m_step
                 f_trial = nlp.obj(x_trial)
-                m = m - f_inter + f_trial
+                if f_trial <= f_inter:
+                    # Safety check for machine-precision errors in magical steps
+                    m = m - (f_inter - f_trial)
+            #     self.log.debug('pred = %20.16g, pred increase = %20.16g' % (self.solver.m, f_inter - f_trial))
+            # else:
+            #     self.log.debug('ared = %20.16f' % (self.f - f_trial))                
 
             rho  = self.TR.Rho(self.f, f_trial, m)
 
