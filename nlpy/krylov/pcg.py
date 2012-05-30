@@ -12,7 +12,7 @@ truncated preconditioned conjugate gradient algorithm as described in
 from nlpy.tools.exceptions import UserExitRequest
 from nlpy.tools.utils import NullHandler
 import numpy as np
-import logging
+import logging, pdb
 from math import sqrt
 import sys
 
@@ -162,7 +162,10 @@ class TruncatedCG:
         stopTol = max(abstol, reltol * sqrtry)
 
         # Initialize r as a copy of g not to alter the original g
-        p = -y                       # p = - preconditioned residual
+        if 'p0' in kwargs:
+            p = kwargs['p0']
+        else:
+            p = -y                       # p = - preconditioned residual
         k = 0
 
         onBoundary = False
@@ -216,8 +219,19 @@ class TruncatedCG:
             r += alpha * Hp
             y = prec(r)
             ry_next = np.dot(r, y)
-            beta = ry_next/ry
-            p = -y + beta * p
+
+            if ry == 0.0 and ry_next == 0.0:
+                beta = 0.0
+            elif ry == 0.0:
+                beta = np.inf
+            else:
+                beta = ry_next/ry
+
+            try:
+                p = -y + beta * p
+            except:
+                pdb.set_trace()
+
             ry = ry_next
 
             try:
