@@ -35,6 +35,7 @@ from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
 # from nlpy.optimize.solvers.sbmin import SBMINFramework
 # from nlpy.optimize.solvers.sbmin import SBMINLqnFramework
 from nlpy.tools.exceptions import UserExitRequest
+from nlpy.tools.utils import where
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
 
@@ -152,7 +153,9 @@ class AugmentedLagrangian(NLPModel):
         Returns a list containing the indices of variables that are at 
         either their lower or upper bound.
         '''
-        active_bound = where(x==self.Lvar or x==self.Uvar)
+        lower_active = where(x==self.Lvar)
+        upper_active = where(x==self.Uvar)
+        active_bound = np.concatenate((lower_active,upper_active))
         return active_bound
 
 
@@ -180,7 +183,7 @@ class AugmentedLagrangian(NLPModel):
 
         # Call LSQR method
         lsqr = LSQRFramework(Jred.T)
-        lsqr.solve(g[not_on_bound], itnlim=lim, damp=1.e-4)
+        lsqr.solve(g[not_on_bound], itnlim=lim)
         if lsqr.optimal:
             self.pi = lsqr.x.copy()
 
