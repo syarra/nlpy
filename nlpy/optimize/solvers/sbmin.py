@@ -160,7 +160,7 @@ class SBMINFramework:
 
         self.radii = [ self.TR.Delta ]
 
-        stoptol = self.reltol# * self.pg0
+        stoptol = self.reltol * self.pg0 + 1e-5
         step_status = None
         exitIter = exitUser = exitTR = False
         exitOptimal = self.pgnorm <= stoptol
@@ -215,7 +215,12 @@ class SBMINFramework:
                 x_trial = x_inter + m_step
                 self.true_step += m_step
                 f_trial = nlp.obj(x_trial)
-                m = m - f_inter + f_trial
+                if f_trial <= f_inter:
+                    # Safety check for machine-precision errors in magical steps
+                    m = m - (f_inter - f_trial)
+            #     self.log.debug('pred = %20.16g, pred increase = %20.16g' % (self.solver.m, f_inter - f_trial))
+            # else:
+            #     self.log.debug('ared = %20.16f' % (self.f - f_trial))                
 
             rho  = self.TR.Rho(self.f, f_trial, m)
 
@@ -304,6 +309,8 @@ class SBMINFramework:
             self.log.info(self.format % (self.iter, self.f,
                           self.pgnorm, bqpiter, rho,
                           self.radii[-2], pstatus))
+            # if self.iter >= 100:
+            #     self.log.debug('Detail f = %16.12f' % self.f)
 
             exitOptimal = self.pgnorm <= stoptol
             exitIter    = self.iter > self.maxiter
@@ -325,14 +332,14 @@ class SBMINFramework:
 
 
 
-class SBMINLbfgsFramework(SBMINFramework):
+class SBMINLqnFramework(SBMINFramework):
     """
     Class SBMINLbfgsFramework is a subclass of SBMINFramework. The method is
     based on a trust-region-based algorithm for nonlinear box constrained
     programming.
-    The only difference is that a limited-memory BFGS Hessian approximation
-    is used and maintained along the iterations. See class SBMINFramework for
-    more information.
+    The only difference is that a limited-memory quasi-Newton Hessian 
+    approximation is used and maintained along the iterations. See class 
+    SBMINFramework for more information.
     """
 
     def __init__(self, nlp, TR, TrSolver, **kwargs):
@@ -344,7 +351,7 @@ class SBMINLbfgsFramework(SBMINFramework):
     def PostIteration(self, **kwargs):
         """
         This method updates the limited-memory BFGS Hessian by appending
-        the most rencet (s,y) pair to it and possibly discarding the oldest one
+        the most recent (s,y) pair to it and possibly discarding the oldest one
         if all the memory has been used.
         """
         # LBFGS approximation should only update on *successful* iterations
@@ -371,7 +378,6 @@ class TrustBQPModel(NLPModel):
         Delta = delta*np.ones(nlp.n)
         Lvar = np.maximum(nlp.Lvar - x_k, -Delta)
         Uvar = np.minimum(nlp.Uvar - x_k, Delta)
-
         NLPModel.__init__(self, n=nlp.n, m=nlp.m, name='TrustRegionSubproblem',
                           Lvar=Lvar ,Uvar =Uvar)
         self.nlp = nlp

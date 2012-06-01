@@ -248,7 +248,7 @@ class SlackNLP( MFModel ):
 
         Constraints appear in the following order:
 
-        1. [ c  ]   general constraints in origninal order
+        1. [ c  ]   general constraints in original order
         2. [ cR ]   'upper' side of range constraints
         3. [ b  ]   linear constraints corresponding to bounds on original problem
         4. [ bR ]   linear constraints corresponding to 'upper' side of two-sided
@@ -387,9 +387,9 @@ class SlackNLP( MFModel ):
 
         # Insert contribution of slacks on general constraints
         bot = on;       p[lowerC] -= v[bot:bot+nlowerC]
-        bot += nlowerC; p[upperC] -= v[bot:bot+nupperC]
-        bot += nupperC; p[rangeC] -= v[bot:bot+nrangeC]
-        bot += nrangeC; p[om:om+nrangeC] -= v[bot:bot+nrangeC]
+        bot += nlowerC; p[rangeC] -= v[bot:bot+nrangeC]
+        bot += nrangeC; p[upperC] -= v[bot:bot+nupperC]
+        bot += nupperC; p[om:om+nrangeC] -= v[bot:bot+nrangeC]
 
         if self.keep_variable_bounds==False:
             # Insert contribution of bound constraints on the original problem
@@ -428,9 +428,9 @@ class SlackNLP( MFModel ):
 
         # Insert contribution of slacks on general constraints
         bot = on;       p[on:on+nlowerC]    = -v[lowerC]
-        bot += nlowerC; p[bot:bot+nupperC]  = -v[upperC]
-        bot += nupperC; p[bot:bot+nrangeC]  = -v[rangeC]
-        bot += nrangeC; p[bot:bot+nrangeC]  = -v[om:om+nrangeC]
+        bot += nlowerC; p[bot:bot+nrangeC]  = -v[rangeC]
+        bot += nrangeC; p[bot:bot+nupperC]  = -v[upperC]
+        bot += nupperC; p[bot:bot+nrangeC]  = -v[om:om+nrangeC]
 
         if self.keep_variable_bounds==False:
             # Insert contribution of bound constraints on the original problem

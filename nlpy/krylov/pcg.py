@@ -10,7 +10,9 @@ truncated preconditioned conjugate gradient algorithm as described in
 """
 
 from nlpy.tools.exceptions import UserExitRequest
+from nlpy.tools.utils import NullHandler
 import numpy as np
+import logging
 from math import sqrt
 import sys
 
@@ -66,15 +68,22 @@ class TruncatedCG:
         self.dir = None
 
         # Formats for display
-        self.hd_fmt = ' %-5s  %9s  %8s\n'
+        self.hd_fmt = ' %-5s  %9s  %8s'
         self.header = self.hd_fmt % ('Iter', '<r,g>', 'curv')
-        self.fmt = ' %-5d  %9.2e  %8.2e\n'
+        self.fmt = ' %-5d  %9.2e  %8.2e'
+
+        # Create a logger for solver.
+        self.log = logging.getLogger('nlpy.pcg')
+        try:
+            self.log.addHandler(logging.NullHandler()) # For Python 2.7.x
+        except:
+            self.log.addHandler(NullHandler()) # For Python 2.6.x (and older?)
 
         return
 
 
-    def _write( self, msg ):
-        sys.stderr.write(self.prefix + msg)
+    # def _write( self, msg ):
+    #     sys.stderr.write(self.prefix + msg)
 
 
     def to_boundary(self, s, p, radius, ss=None):
@@ -122,7 +131,7 @@ class TruncatedCG:
         reltol  = kwargs.get('reltol', 1.0e-6)
         maxiter = kwargs.get('maxiter', 2*self.n)
         prec    = kwargs.get('prec', lambda v: v)
-        debug   = kwargs.get('debug', False)
+        # debug   = kwargs.get('debug', False)
 
         n = self.n
         g = self.g
@@ -159,9 +168,10 @@ class TruncatedCG:
         onBoundary = False
         infDescent = False
 
-        if debug:
-            self._write(self.header)
-            self._write('-' * len(self.header) + '\n')
+        # if debug:
+        self.log.debug('-' * len(self.header))
+        self.log.debug(self.header)
+        self.log.debug('-' * len(self.header))
 
         #while sqrtry > stopTol and k < maxiter and \
         while not (exitOptimal or exitIter or exitUser) and \
@@ -171,8 +181,8 @@ class TruncatedCG:
             Hp  = H * p
             pHp = np.dot(p, Hp)
 
-            if debug:
-                self._write(self.fmt % (k, ry, pHp))
+            # if debug:
+            self.log.debug(self.fmt % (k, ry, pHp))
 
             # Compute steplength to the boundary.
             if radius is not None:
@@ -240,8 +250,8 @@ class TruncatedCG:
             exitOptimal = sqrtry <= stopTol
 
         # Output info about the last iteration.
-        if debug:
-            self._write(self.fmt % (k, ry, pHp))
+        # if debug:
+        self.log.debug(self.fmt % (k, ry, pHp))
 
         if k < maxiter and not onBoundary:
             self.status = 'residual small'

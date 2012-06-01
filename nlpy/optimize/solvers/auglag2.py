@@ -32,8 +32,9 @@ from nlpy.krylov.linop import PysparseLinearOperator, SimpleLinearOperator
 from nlpy.krylov.linop import ReducedLinearOperator
 from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
-from nlpy.optimize.solvers.sbmin import SBMINFramework
-from nlpy.optimize.solvers.sbmin import SBMINLbfgsFramework
+# from nlpy.optimize.solvers.sbmin import SBMINFramework
+# from nlpy.optimize.solvers.sbmin import SBMINLqnFramework
+from nlpy.tools.exceptions import UserExitRequest
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
 
@@ -92,6 +93,17 @@ class AugmentedLagrangian(NLPModel):
         algrad = nlp.grad(x) + J.T * ( -self.pi + self.rho * cons)
 
         return algrad
+    # end def
+
+    def lgrad(self, x, **kwargs):
+        '''
+        Evaluate Lagrangian gradient.
+        '''
+        nlp = self.nlp
+        J = nlp.jac(x)
+        cons = nlp.cons(x)
+        lgrad = nlp.grad(x) - J.T * self.pi
+        return lgrad
     # end def
 
 
@@ -251,6 +263,20 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
 
 
+class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
+    '''
+    Use an LSR1 approximation instead of the LBFGS approximation.
+    '''
+
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangian.__init__(self, nlp, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=5, **kwargs)
+
+
+# end class
+
+
+
 class AugmentedLagrangianFramework(object):
     '''
     Solve an NLP using the augmented Lagrangian method. This class is
@@ -282,10 +308,6 @@ class AugmentedLagrangianFramework(object):
 
         self.innerSolver = innerSolver
 
-        self.phi0 = None
-        self.dphi0 = None
-        self.dphi0norm = None
-
         self.tau = kwargs.get('tau', 0.1)
         self.omega = None
         self.eta = None
@@ -297,8 +319,8 @@ class AugmentedLagrangianFramework(object):
         self.b_omega = kwargs.get('b_omega',1.)
         self.a_eta = kwargs.get('a_eta',0.1)
         self.b_eta = kwargs.get('b_eta',0.9)
-        self.omega_rel = kwargs.get('omega_rel',1.e-7)
-        self.eta_rel = kwargs.get('eta_rel',1.e-7)
+        self.omega_rel = kwargs.get('omega_rel',1.e-5)
+        self.eta_rel = kwargs.get('eta_rel',1.e-5)
 
         self.f0 = None
         self.f = +np.infty
@@ -363,6 +385,16 @@ class AugmentedLagrangianFramework(object):
         return
 
 
+    def PostIteration(self, **kwargs):
+
+        '''
+        Override this method to perform additional work at the end of a 
+        major iteration. For example, use this method to restart an 
+        approximate Hessian.
+        '''
+        return None
+
+
     def solve(self, **kwargs):
 
         '''
@@ -381,11 +413,14 @@ class AugmentedLagrangianFramework(object):
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
-        dphi = self.alprob.grad(self.x)
-        self.f0 = self.alprob.nlp.obj(self.x[:original_n])
+        #dphi = self.alprob.grad(self.x)
+        dL = self.alprob.lgrad(self.x)
+        self.f = self.f0 = self.alprob.obj(self.x)
 
-        Pdphi = self.alprob.project_gradient(self.x,dphi)
-        Pmax = np.max(np.abs(Pdphi))
+        #Pdphi = self.alprob.project_gradient(self.x,dphi)
+        #Pmax = np.max(np.abs(Pdphi))
+        PdL = self.alprob.project_gradient(self.x,dL)
+        Pmax = np.max(np.abs(PdL))
         self.pg0 = Pmax
 
         # Specific handling for the case where the original NLP is
@@ -398,8 +433,8 @@ class AugmentedLagrangianFramework(object):
 
         self.omega = self.omega_init
         self.eta = self.eta_init
-        self.omega_opt = self.omega_rel# * self.pg0
-        self.eta_opt = self.eta_rel# * max_cons
+        self.omega_opt = self.omega_rel * self.pg0 + 1e-7
+        self.eta_opt = self.eta_rel * max_cons + 1e-7
 
         self.iter = 0
         self.inner_fail_count = 0
@@ -430,12 +465,14 @@ class AugmentedLagrangianFramework(object):
 
             SBMIN.Solve()
             self.x = SBMIN.x.copy()
-            self.f = self.alprob.nlp.obj(self.x[:original_n])
             self.niter_total += SBMIN.iter
 
-            dphi = self.alprob.grad(self.x)
-            Pdphi = self.alprob.project_gradient(self.x,dphi)
-            Pmax_new = np.max(np.abs(Pdphi))
+            #dphi = self.alprob.grad(self.x)
+            #Pdphi = self.alprob.project_gradient(self.x,dphi)
+            #Pmax_new = np.max(np.abs(Pdphi))
+            dL = self.alprob.lgrad(self.x)
+            PdL = self.alprob.project_gradient(self.x,dL)
+            Pmax_new = np.max(np.abs(PdL))
             convals_new = self.alprob.nlp.cons(self.x)
 
             # Specific handling for the case where the original NLP is
@@ -487,13 +524,13 @@ class AugmentedLagrangianFramework(object):
                 self.UpdatePenaltyParameter()
                 self.log.debug('******  Keeping current multipliers estimates  ******\n')
 
-                if max_cons_new > 0.99*cons_norm_ref:
+                if max_cons_new > 0.99*cons_norm_ref and self.iter != 1:
                     infeas_iter += 1
                 else:
                     cons_norm_ref = max_cons_new
                     infeas_iter = 0
 
-                if infeas_iter == 5:
+                if infeas_iter == 10:
                     self.status = 'Infeas'
                     self.log.debug('Problem appears to be infeasible, exiting ... \n')
                     break
@@ -506,6 +543,11 @@ class AugmentedLagrangianFramework(object):
                 self.omega = self.omega_opt
             if self.eta < self.eta_opt:
                 self.eta = self.eta_opt
+
+            try:
+                self.PostIteration()
+            except UserExitRequest:
+                self.status = 'usr'
 
         # end while
 
@@ -533,3 +575,22 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
         self.alprob = AugmentedLagrangianLbfgs(nlp)
+
+
+    def PostIteration(self, **kwargs):
+        """
+        This method restarts the limited-memory BFGS Hessian. 
+        """
+        self.alprob.hrestart()
+        return
+
+
+# end class 
+
+
+
+class AugmentedLagrangianLsr1Framework(AugmentedLagrangianLbfgsFramework):
+
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianLsr1(nlp)
