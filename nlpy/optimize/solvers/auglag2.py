@@ -29,6 +29,7 @@ from nlpy.optimize.solvers.lbfgs import LBFGS
 from nlpy.optimize.solvers.lsr1 import LSR1
 from nlpy.optimize.solvers.lsqr import LSQRFramework
 from nlpy.krylov.linop import PysparseLinearOperator, SimpleLinearOperator
+from nlpy.krylov.linop import ReducedLinearOperator
 from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
 from nlpy.optimize.solvers.sbmin import SBMINFramework
@@ -134,6 +135,15 @@ class AugmentedLagrangian(NLPModel):
         return m_step
 
 
+    def get_active_bounds(self, x):
+        '''
+        Returns a list containing the indices of variables that are at 
+        either their lower or upper bound.
+        '''
+        active_bound = where(x==self.Lvar or x==self.Uvar)
+        return active_bound
+
+
     def lsqr_multipliers(self, x, **kwargs):
         '''
         Compute a least-squares estimate of the Lagrange multipliers for the 
@@ -147,10 +157,21 @@ class AugmentedLagrangian(NLPModel):
 
         lim = max(2*m,2*n)
         J = nlp.jac(x)
-        lsqr = LSQRFramework(J.T)
-        lsqr.solve(nlp.grad(x), itnlim=lim, damp=1.e-4)
+
+        # Determine which bounds are active to remove appropriate columns of J
+        on_bound = self.get_active_bounds(x)
+        not_on_bound = np.setdiff1d(np.arange(n, dtype=np.int), on_bound)
+        Jred = ReducedLinearOperator(J, np.arange(m, dtype=np.int), 
+            not_on_bound)
+
+        g = nlp.grad(x)
+
+        # Call LSQR method
+        lsqr = LSQRFramework(Jred.T)
+        lsqr.solve(g[not_on_bound], itnlim=lim, damp=1.e-4)
         if lsqr.optimal:
             self.pi = lsqr.x.copy()
+
         return
 
 
@@ -311,7 +332,12 @@ class AugmentedLagrangianFramework(object):
         Infeasibility is sufficiently small; update multipliers and
         tighten feasibility and optimality tolerances
         '''
+
+        # if self.least_squares_pi:
+        #     self.alprob.lsqr_multipliers(self.x)
+        # else:
         self.alprob.pi -= self.alprob.rho*convals
+
         if status == 'opt':
             # Safeguard: tighten tolerances only if desired optimality
             # is reached to prevent rapid decay of the tolerances from failed
