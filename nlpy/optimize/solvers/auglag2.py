@@ -62,44 +62,7 @@ class AugmentedLagrangian(NLPModel):
         self.Lvar = self.nlp.Lvar
         self.Uvar = self.nlp.Uvar
         self.x0 = self.nlp.x0
-        self.scale_obj = None
     # end def
-
-    def compute_scaling_obj(self, x=None, g_max=1.0e2, reset=False):
-        """
-        Compute objective scaling.
-
-        :parameters:
-
-            :x: Determine scaling by evaluating functions at this
-                point. Default is to use :attr:`self.x0`.
-            :g_max: Maximum allowed gradient. Default: :attr:`g_max = 1e2`.
-            :reset: Set to `True` to unscale the problem.
-
-        The procedure used here closely
-        follows IPOPT's behavior; see Section 3.8 of
-
-          Waecther and Biegler, 'On the implementation of an
-          interior-point filter line-search algorithm for large-scale
-          nonlinear programming', Math. Prog. A (106), pp.25-57, 2006
-
-        which is a scalar rescaling that ensures the inf-norm of the
-        gradient (at x) isn't larger than 'g_max'.
-
-        """
-
-        if x is None: x = self.x0
-        g = self.grad(x)
-        pg = self.project_gradient(x, g)
-        gNorm = np.linalg.norm(pg, np.inf)
-        #print gNorm
-        self.scale_obj = g_max / max(g_max, gNorm) # <= 1 always
-        #print self.scale_obj
-
-        # Rescale the Lagrange multiplier
-        self.pi0 *= self.scale_obj
-
-        return gNorm
 
     def obj(self, x, **kwargs):
         '''
@@ -111,7 +74,6 @@ class AugmentedLagrangian(NLPModel):
 
         alfunc -= np.dot(self.pi,cons)
         alfunc += 0.5*self.rho*np.dot(cons,cons)
-        if self.scale_obj:    alfunc *= self.scale_obj
         return alfunc
     # end def
 
@@ -124,7 +86,6 @@ class AugmentedLagrangian(NLPModel):
         J = nlp.jac(x)
         cons = nlp.cons(x)
         algrad = nlp.grad(x) + J.T * ( -self.pi + self.rho * cons)
-        if self.scale_obj:    algrad *= self.scale_obj
         return algrad
     # end def
 
@@ -206,7 +167,6 @@ class AugmentedLagrangian(NLPModel):
         w[:on] = nlp.hprod(x[:on],-pi_bar + self.rho * mu, v[:on])
         J = nlp.jac(x)
         w += self.rho * (J.T * (J * v))
-        if self.scale_obj: w *= self.scale_obj
         return w
 
 

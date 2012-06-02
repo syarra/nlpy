@@ -186,19 +186,6 @@ class SBMINFramework:
                                              self.pgnorm, '', '',
                                              '', ''))
 
-        self.nlp.compute_scaling_obj(self.x)
-
-        self.f0 = self.nlp.obj(self.x)
-        self.g_old = self.nlp.grad(self.x)
-        self.f        = self.f0
-        self.g        = self.g_old
-        self.pgnorm = np.max(np.abs( \
-                                self.projected_gradient(self.x,self.g)))
-        self.pg0 = self.pgnorm
-        self.log.info(self.format0 % (self.iter, self.f,
-                                             self.pgnorm, '', '',
-                                             '', ''))
-
         while not (exitUser or exitOptimal or exitIter or exitTR):
 
             self.iter += 1
