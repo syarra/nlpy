@@ -87,6 +87,10 @@ class SBMINFramework:
         if self.magic_steps_agg and self.magic_steps_cons:
             self.magic_steps_cons = False
 
+        # Options for non monotone descent strategy
+        self.monotone = kwargs.get('monotone', True)
+        self.nIterNonMono = kwargs.get('nIterNonMono', 25)
+
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
@@ -157,8 +161,14 @@ class SBMINFramework:
 
         # Reset initial trust-region radius.
         self.TR.Delta = np.maximum(0.1 * self.pgnorm,.2)
-
         self.radii = [ self.TR.Delta ]
+
+        # Initialize non-monotonicity parameters.
+        if not self.monotone:
+            self.log.info('Using Non monotone descent strategy')
+            fMin = fRef = fCan = self.f0
+            l = 0
+            sigRef = sigCan = 0
 
         stoptol = self.reltol * self.pg0 + 1e-5
         step_status = None
@@ -232,6 +242,10 @@ class SBMINFramework:
 
             rho  = self.TR.Rho(self.f, f_trial, m)
 
+            if not self.monotone:
+                rhoHis = (fRef - f_trial)/(sigRef - m)
+                rho = max(rho, rhoHis)
+
             step_status = 'Rej'
 
             if rho >= self.TR.eta1:
@@ -252,6 +266,26 @@ class SBMINFramework:
                 self.pgnorm = np.max(np.abs( \
                                         self.projected_gradient(self.x,self.g)))
                 step_status = 'Acc'
+
+                # Update non-monotonicity parameters.
+                if not self.monotone:
+                    sigRef = sigRef - m
+                    sigCan = sigCan - m
+                    if f_trial < fMin:
+                        fCan = f_trial
+                        fMin = f_trial
+                        sigCan = 0
+                        l = 0
+                    else:
+                        l = l + 1
+
+                    if f_trial > fCan:
+                        fCan = f_trial
+                        sigCan = 0
+
+                    if l == self.nIterNonMono:
+                        fRef = fCan
+                        sigRef = sigCan
 
             else:
 
@@ -384,6 +418,7 @@ class TrustBQPModel(NLPModel):
         Delta = delta*np.ones(nlp.n)
         Lvar = np.maximum(nlp.Lvar - x_k, -Delta)
         Uvar = np.minimum(nlp.Uvar - x_k, Delta)
+
         NLPModel.__init__(self, n=nlp.n, m=nlp.m, name='TrustRegionSubproblem',
                           Lvar=Lvar ,Uvar =Uvar)
         self.nlp = nlp
