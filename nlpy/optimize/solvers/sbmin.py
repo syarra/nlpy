@@ -79,8 +79,8 @@ class SBMINFramework:
         self.nbk     = kwargs.get('nbk', 5)
         self.alpha   = 1.0
 
-        # Options for monotone descent strategy
-        self.monotone = kwargs.get('monotone', False)
+        # Options for non monotone descent strategy
+        self.monotone = kwargs.get('monotone', True)
         self.nIterNonMono = kwargs.get('nIterNonMono', 25)
 
         self.reltol  = kwargs.get('reltol', 1.0e-5)
