@@ -11,7 +11,7 @@ from cqp     import *
 from funnel  import *
 from elastic import *
 from sbmin   import *
-from auglag  import *
+# from auglag  import *
 from auglag2 import *
 from bqp     import *
 

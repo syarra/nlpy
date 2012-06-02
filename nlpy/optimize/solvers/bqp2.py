@@ -51,10 +51,10 @@ class SufficientDecreaseCG(TruncatedCG):
 
     See the documentation of TruncatedCG for more information.
     """
-    def __init__(self, g, H, qval=0.0, **kwargs):
+    def __init__(self, g, H, **kwargs):
         TruncatedCG.__init__(self, g, H, **kwargs)
         self.name = 'Suff-CG'
-        self.qval = qval   # Initial value of quadratic objective.
+        self.qval = 0.0   # Initial value of quadratic objective.
         self.best_decrease = 0
         self.cg_reltol = kwargs.get('cg_reltol', 0.1)
         self.detect_stalling = kwargs.get('detect_stalling', True)
@@ -151,9 +151,7 @@ class BQP(object):
         pg[i] = max(g[i],0)  if x[i] is at its upper bound,
         pg[i] = g[i]         otherwise.
         """
-        if check_feasible:
-            try: self.check_feasible(x)
-            except: pdb.set_trace()
+        if check_feasible: self.check_feasible(x)
 
         if g is None: g = self.qp.grad(x)
 
@@ -287,10 +285,8 @@ class BQP(object):
             # Follow the direction of negative curvature until it hits a bound
             aup = (self.Uvar[nonzeroind]-x[nonzeroind])/nonzerod
             aupp = aup[aup>-1e-60]
-            #print 'aup: ', aup
             alow = (self.Lvar[nonzeroind]-x[nonzeroind])/nonzerod
             alowp = alow[alow>-1e-60]
-            #print 'alow: ', alow
             if aupp.size != 0:
                 aupmin = np.min(aupp)
                 if alowp.size != 0:
@@ -302,20 +298,14 @@ class BQP(object):
                     alpha = np.min(alowp)
                 else: alpha=0.
 
-            #print 'alpha: ', alpha
             try:
                 x += alpha*d
             except:
                 pdb.set_trace()
 
-        self.log.debug('tob, before pg qvql: %8.2g'%self.qp.obj(x))
         # Do another projected gradient update
         (x, (lower,upper)) = self.projected_gradient(x)
-        self.log.debug('tob, after pg qvql: %8.2g'%self.qp.obj(x))
-        (lower, upper) = self.get_active_set(x)
-        #if exitStatus != 'iter':
-        #    return (xb, (lowerb,upperb))
-        #else:
+
         return (x, (lower,upper))
 
 
@@ -362,7 +352,6 @@ class BQP(object):
 
             # Projected-gradient phase: determine next working set.
             (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
-            self.log.debug(repr(x))
             g = qp.grad(x)
             qval = qp.obj(x)
             self.log.debug('q after projected gradient = %8.2g' % qval)
@@ -404,34 +393,26 @@ class BQP(object):
 
             # 3. Expand search direction.
             d = np.zeros(n)
-            d[free_vars] = cg.step.copy()
+            d[free_vars] = cg.step
 
-            #print 's: ', cg.step
-            #print 'free', free_vars
-            if cg.infDescent and cg.dir.size !=0 :
+            if cg.infDescent and cg.step.size != 0 and cg.dir.size !=0:
                 self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
-                #print 'd: ', cg.dir
 
                 # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
                 nc_dir = np.zeros(n)
-                nc_dir[free_vars] = cg.dir.copy()
-
-                zgc = Zg*cg.dir
-                self.log.debug('Ascent: %6.2e'%zgc[0])
+                nc_dir[free_vars] = cg.dir
                 (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
-
             else:
                 # 4. Update x using projected linesearch with initial step=1.
                 (x, qval) = self.projected_linesearch(x, g, d, qval)
 
             self.log.debug('q after first CG pass = %8.2g' % qp.obj(x))
 
-            self.log.debug(repr(x))
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
 
-            if False:#pgNorm <= stoptol:
+            if pgNorm <= stoptol:
                 exitOptimal = True
                 self.log.info(self.format % (iter, qval,
                               pgNorm, cg.niter))
@@ -440,46 +421,40 @@ class BQP(object):
             # Compare active set to binding set.
             lower, upper = self.get_active_set(x)
 
-            if np.all(g[lower] >= 0) and np.all(g[upper] <= 0) and not cg.status == 'infinite descent':
+            if np.all(g[lower] >= 0) and np.all(g[upper] <= 0):
                 # The active set agrees with the binding set.
                 # Continue CG iterations with tighter tolerance.
                 # This currently incurs a little bit of extra work
                 # by instantiating a new CG object.
                 self.log.debug('Active set and binding set match. Continuing CG.')
                 s0 = cg.step[:]
-                p0 = cg.p[:]
-                #print 's0: ', s0
                 cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=False)
-                cg.Solve(s0=s0,p0=p0)
+                cg.Solve(s0=s0)
 
                 self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
                 d = np.zeros(n)
-                d[free_vars] = cg.step.copy()
+                d[free_vars] = cg.step
 
-                if cg.infDescent:
+                if cg.infDescent and cg.step.size != 0:
                     self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
                     # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
                     nc_dir = np.zeros(n)
-                    nc_dir[free_vars] = cg.dir.copy()
-                    zgc = Zg*cg.dir
-                    self.log.debug('Ascent: %6.2e'%zgc[0])
-
-                    x_old = x.copy()
-                    #print 'xold: ', x_old
+                    nc_dir[free_vars] = cg.dir
                     (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
                     qval = qp.obj(x)
-                    #print 'new x: ', x
                 else:
                     # 4. Update x using projected linesearch with initial step=1.
                     (x, qval) = self.projected_linesearch(x, g, d, qval)
 
                 self.log.debug('q after second CG pass = %8.2g' % qp.obj(x))
 
-                self.log.debug(repr(x))
                 g = qp.grad(x)
                 pg = self.pgrad(x, g=g, active_set=(lower,upper))
                 pgNorm = np.linalg.norm(pg)
 
+            # Exit if second CG pass results in optimality
+            if pgNorm <= stoptol:
+                exitOptimal = True
 
             self.log.info(self.format % (iter, qval,
                           pgNorm, cg.niter))

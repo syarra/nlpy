@@ -30,8 +30,9 @@ from nlpy.optimize.solvers.lsr1 import LSR1
 from nlpy.krylov.linop import PysparseLinearOperator, SimpleLinearOperator
 from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
-from nlpy.optimize.solvers.sbmin import SBMINFramework
-from nlpy.optimize.solvers.sbmin import SBMINLbfgsFramework
+# from nlpy.optimize.solvers.sbmin import SBMINFramework
+# from nlpy.optimize.solvers.sbmin import SBMINLqnFramework
+from nlpy.tools.exceptions import UserExitRequest
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
 
@@ -216,6 +217,20 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
 
 
+class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
+    '''
+    Use an LSR1 approximation instead of the LBFGS approximation.
+    '''
+
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangian.__init__(self, nlp, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=5, **kwargs)
+
+
+# end class
+
+
+
 class AugmentedLagrangianFramework(object):
     '''
     Solve an NLP using the augmented Lagrangian method. This class is
@@ -314,6 +329,16 @@ class AugmentedLagrangianFramework(object):
         self.eta = self.eta0*self.alprob.rho**-self.a_eta
         self.omega = self.omega0*self.alprob.rho**-self.a_omega
         return
+
+
+    def PostIteration(self, **kwargs):
+
+        '''
+        Override this method to perform additional work at the end of a 
+        major iteration. For example, use this method to restart an 
+        approximate Hessian.
+        '''
+        return None
 
 
     def solve(self, **kwargs):
@@ -461,6 +486,11 @@ class AugmentedLagrangianFramework(object):
             if self.eta < self.eta_opt:
                 self.eta = self.eta_opt
 
+            try:
+                self.PostIteration()
+            except UserExitRequest:
+                self.status = 'usr'
+
         # end while
 
         # Solution output, etc.
@@ -487,3 +517,22 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
         self.alprob = AugmentedLagrangianLbfgs(nlp)
+
+
+    def PostIteration(self, **kwargs):
+        """
+        This method restarts the limited-memory BFGS Hessian. 
+        """
+        self.alprob.hrestart()
+        return
+
+
+# end class 
+
+
+
+class AugmentedLagrangianLsr1Framework(AugmentedLagrangianLbfgsFramework):
+
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianLsr1(nlp)
