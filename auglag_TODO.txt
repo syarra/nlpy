@@ -35,6 +35,7 @@ More "radical" / experimental ideas:
 - "Smart" selection of initial penalty parameter
 
 - "Smart" selection of initial multipliers, e.g. least-squares initialization
+	- added option for LSQR to compute multipliers June 4, 2012
 
 - Extrapolation of x near a solution with good multiplier estimates
 
