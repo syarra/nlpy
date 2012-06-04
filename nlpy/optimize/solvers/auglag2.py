@@ -39,6 +39,15 @@ from nlpy.tools.utils import where
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
 
+def FormEntireMatrix(on,om,Jop):
+    J = np.zeros([om,on])
+    for i in range(0,on):
+        v = np.zeros(on)
+        v[i] = 1.
+        J[:,i] = Jop * v
+    return J
+
+
 class AugmentedLagrangian(NLPModel):
     '''
     This class is a reformulation of an NLP, used to compute the
@@ -358,10 +367,11 @@ class AugmentedLagrangianFramework(object):
         tighten feasibility and optimality tolerances
         '''
 
-        # if self.least_squares_pi:
-        #     self.alprob.lsqr_multipliers(self.x)
-        # else:
-        self.alprob.pi -= self.alprob.rho*convals
+        if self.least_squares_pi:
+            self.alprob.lsqr_multipliers(self.x)
+        else:
+            self.alprob.pi -= self.alprob.rho*convals
+        self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
         if status == 'opt':
             # Safeguard: tighten tolerances only if desired optimality
@@ -412,7 +422,6 @@ class AugmentedLagrangianFramework(object):
         # Use a least-squares estimate of the multipliers to start (if requested)
         if self.least_squares_pi:
             self.alprob.lsqr_multipliers(self.x)
-            # self.log.debug('Initial multipliers = %8.4g , %8.4g' % (self.alprob.pi[0],self.alprob.pi[1]))
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
@@ -520,7 +529,6 @@ class AugmentedLagrangianFramework(object):
                     break
 
                 self.log.debug('******  Updating multipliers estimates  ******\n')
-                # self.log.debug('pi = %g , %g' % (self.alprob.pi[0],self.alprob.pi[1]))
 
             else:
 
