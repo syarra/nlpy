@@ -228,7 +228,7 @@ class SBMINFramework:
                 if f_trial <= f_inter:
                     # Safety check for machine-precision errors in magical steps
                     m = m - (f_inter - f_trial)
-            #     self.log.debug('pred = %20.16g, pred increase = %20.16g' % (self.solver.m, f_inter - f_trial))
+            #     self.log.debug('pred = %20.16g, pred increase = %20.16g' % (self.solver.m, -(f_inter - f_trial)))
             # else:
             #     self.log.debug('ared = %20.16f' % (self.f - f_trial))                
 
