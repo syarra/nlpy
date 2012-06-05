@@ -417,10 +417,17 @@ class AugmentedLagrangianFramework(object):
         # Use a least-squares estimate of the multipliers to start (if requested)
         if self.least_squares_pi:
             self.alprob.lsqr_multipliers(self.x)
+            self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
-        #dphi = self.alprob.grad(self.x)
+        dphi = self.alprob.grad(self.x)
+
+        # "Smart" initialization of slack variables using the magical step 
+        # function that is already available
+        m_step_init = self.alprob.magical_step(self.x, dphi)
+        self.x += m_step_init
+
         dL = self.alprob.lgrad(self.x)
         self.f = self.f0 = self.alprob.nlp.obj(self.x[:original_n])
 
