@@ -161,6 +161,7 @@ class SBMINFramework:
 
         self.f        = self.f0
         self.g        = self.g_old
+        self.lg       = self.lg_old
         self.pgnorm = np.max(np.abs( \
                                 self.projected_gradient(self.x,self.g)))
         self.pg0 = self.pgnorm

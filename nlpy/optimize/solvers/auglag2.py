@@ -283,7 +283,7 @@ class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianLbfgs):
 
     def hprod(self, x, z, v, **kwargs):
         w = self.Hessapp.matvec(v)
-        J = nlp.jac(x)
+        J = self.nlp.jac(x)
         w += self.rho * (J.T * (J * v))
         return w
 
