@@ -271,6 +271,26 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
 
 
+class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianLbfgs):
+    '''
+    Only apply the LBFGS approximation to the second order terms of the 
+    Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
+    '''
+
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangianLbfgs.__init__(self, nlp, **kwargs)
+
+
+    def hprod(self, x, z, v, **kwargs):
+        w = self.Hessapp.matvec(v)
+        J = nlp.jac(x)
+        w += self.rho * (J.T * (J * v))
+        return w
+
+
+
+# end class
+
 class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
     '''
     Use an LSR1 approximation instead of the LBFGS approximation.
@@ -600,6 +620,17 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
 
 
 # end class 
+
+
+
+class AugmentedLagrangianPartialLbfgsFramework(AugmentedLagrangianLbfgsFramework):
+
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianLbfgsFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianPartialLbfgs(nlp)
+
+
+# end class
 
 
 
