@@ -144,6 +144,7 @@ class SlackNLP( MFModel ):
         self.hprod = nlp.hprod
         self.hiprod = self.hiprod
 
+        self.equalC = nlp.equalC ; self.nequalC = nlp.equalC
         self.lowerC = nlp.lowerC ; self.nlowerC = nlp.nlowerC
         self.upperC = nlp.upperC ; self.nupperC = nlp.nupperC
         self.rangeC = nlp.rangeC ; self.nrangeC = nlp.nrangeC
