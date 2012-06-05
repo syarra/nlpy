@@ -328,7 +328,9 @@ class AugmentedLagrangianFramework(object):
         self.a_eta = kwargs.get('a_eta',0.1)
         self.b_eta = kwargs.get('b_eta',0.9)
         self.omega_rel = kwargs.get('omega_rel',1.e-5)
+        self.omega_abs = kwargs.get('omega_abs',1.e-7)
         self.eta_rel = kwargs.get('eta_rel',1.e-5)
+        self.eta_abs = kwargs.get('eta_abs',1.e-7)
 
         self.f0 = self.f = None
 
@@ -446,8 +448,8 @@ class AugmentedLagrangianFramework(object):
 
         self.omega = self.omega_init
         self.eta = self.eta_init
-        self.omega_opt = self.omega_rel * self.pg0 + 1e-7
-        self.eta_opt = self.eta_rel * max_cons + 1e-7
+        self.omega_opt = self.omega_rel * self.pg0 + self.omega_abs
+        self.eta_opt = self.eta_rel * max_cons + self.eta_abs
 
         self.iter = 0
         self.inner_fail_count = 0
