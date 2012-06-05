@@ -49,7 +49,7 @@ class MFModel(NLPModel):
 
 
     def jac(self, x, **kwargs):
-        return SimpleLinearOperator(self.m, self.n, symmetric=False,
+        return SimpleLinearOperator(self.n, self.m, symmetric=False,
                          matvec=lambda u: self.jprod(x,u,**kwargs),
                          matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
 

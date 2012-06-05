@@ -27,13 +27,25 @@ from nlpy.model.mfnlp import MFModel, SlackNLP
 from nlpy.model.amplpy import AmplModel
 from nlpy.optimize.solvers.lbfgs import LBFGS
 from nlpy.optimize.solvers.lsr1 import LSR1
+from nlpy.optimize.solvers.lsqr import LSQRFramework
 from nlpy.krylov.linop import PysparseLinearOperator, SimpleLinearOperator
+from nlpy.krylov.linop import ReducedLinearOperator
 from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
 # from nlpy.optimize.solvers.sbmin import SBMINFramework
 # from nlpy.optimize.solvers.sbmin import SBMINLqnFramework
 from nlpy.tools.exceptions import UserExitRequest
+from nlpy.tools.utils import where
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
+
+
+def FormEntireMatrix(on,om,Jop):
+    J = np.zeros([om,on])
+    for i in range(0,on):
+        v = np.zeros(on)
+        v[i] = 1.
+        J[:,i] = Jop * v
+    return J
 
 
 class AugmentedLagrangian(NLPModel):
@@ -140,6 +152,48 @@ class AugmentedLagrangian(NLPModel):
         m_step[on:] = np.where(-m_step[on:] > x[on:], -x[on:], m_step[on:])
 
         return m_step
+
+
+    def get_active_bounds(self, x):
+        '''
+        Returns a list containing the indices of variables that are at 
+        either their lower or upper bound.
+        '''
+        lower_active = where(x==self.Lvar)
+        upper_active = where(x==self.Uvar)
+        active_bound = np.concatenate((lower_active,upper_active))
+        return active_bound
+
+
+    def lsqr_multipliers(self, x, **kwargs):
+        '''
+        Compute a least-squares estimate of the Lagrange multipliers for the 
+        current point. This may lead to faster convergence of the augmented 
+        Lagrangian algorithm, at the expense of more Jacobian-vector products.
+        '''
+
+        nlp = self.nlp
+        m = nlp.m
+        n = nlp.n
+
+        lim = max(2*m,2*n)
+        J = nlp.jac(x)
+
+        # Determine which bounds are active to remove appropriate columns of J
+        on_bound = self.get_active_bounds(x)
+        not_on_bound = np.setdiff1d(np.arange(n, dtype=np.int), on_bound)
+        Jred = ReducedLinearOperator(J, np.arange(m, dtype=np.int), 
+            not_on_bound)
+
+        g = nlp.grad(x)
+
+        # Call LSQR method
+        lsqr = LSQRFramework(Jred.T)
+        lsqr.solve(g[not_on_bound], itnlim=lim)
+        if lsqr.optimal:
+            self.pi = lsqr.x.copy()
+
+        return
 
 
     def hprod(self, x, z, v, **kwargs):
@@ -258,6 +312,8 @@ class AugmentedLagrangianFramework(object):
         self.alprob = AugmentedLagrangian(nlp,**kwargs)
         self.x = kwargs.get('x0', self.alprob.x0.copy())
 
+        self.least_squares_pi = kwargs.get('least_squares_pi',False)
+
         self.innerSolver = innerSolver
 
         self.tau = kwargs.get('tau', 0.1)
@@ -305,7 +361,13 @@ class AugmentedLagrangianFramework(object):
         Infeasibility is sufficiently small; update multipliers and
         tighten feasibility and optimality tolerances
         '''
-        self.alprob.pi -= self.alprob.rho*convals
+
+        if self.least_squares_pi:
+            self.alprob.lsqr_multipliers(self.x)
+        else:
+            self.alprob.pi -= self.alprob.rho*convals
+        self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
+
         if status == 'opt':
             # Safeguard: tighten tolerances only if desired optimality
             # is reached to prevent rapid decay of the tolerances from failed
@@ -350,6 +412,10 @@ class AugmentedLagrangianFramework(object):
 
         # Move starting point into the feasible box
         self.x = self.alprob.project_x(self.x)
+
+        # Use a least-squares estimate of the multipliers to start (if requested)
+        if self.least_squares_pi:
+            self.alprob.lsqr_multipliers(self.x)
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
