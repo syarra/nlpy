@@ -368,7 +368,7 @@ class SBMINFramework:
 
 class SBMINLqnFramework(SBMINFramework):
     """
-    Class SBMINLbfgsFramework is a subclass of SBMINFramework. The method is
+    Class SBMINLqnFramework is a subclass of SBMINFramework. The method is
     based on a trust-region-based algorithm for nonlinear box constrained
     programming.
     The only difference is that a limited-memory quasi-Newton Hessian 
@@ -384,11 +384,11 @@ class SBMINLqnFramework(SBMINFramework):
 
     def PostIteration(self, **kwargs):
         """
-        This method updates the limited-memory BFGS Hessian by appending
+        This method updates the limited-memory quasi-Newton Hessian by appending
         the most recent (s,y) pair to it and possibly discarding the oldest one
         if all the memory has been used.
         """
-        # LBFGS approximation should only update on *successful* iterations
+        # Quasi-Newton approximation should only update on *successful* iterations
         if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
             s = self.true_step
             y = self.g - self.g_old

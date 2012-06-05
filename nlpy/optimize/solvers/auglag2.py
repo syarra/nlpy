@@ -408,7 +408,6 @@ class AugmentedLagrangianFramework(object):
         '''
         Solve the optimization problem and return the solution.
         '''
-
         original_n = self.alprob.nlp.original_n
 
         # Move starting point into the feasible box
