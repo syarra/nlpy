@@ -95,6 +95,7 @@ class SBMINFramework:
         self.nIterNonMono = kwargs.get('nIterNonMono', 25)
 
         self.reltol  = kwargs.get('reltol', 1.0e-5)
+        self.abstol  = kwargs.get('abstol', 1.0e-7)
         self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
@@ -177,7 +178,7 @@ class SBMINFramework:
             l = 0
             sigRef = sigCan = 0
 
-        stoptol = self.reltol * self.pg0 + 1e-5
+        stoptol = self.reltol * self.pg0 + self.abstol
         step_status = None
         exitIter = exitUser = exitTR = False
         exitOptimal = self.pgnorm <= stoptol
