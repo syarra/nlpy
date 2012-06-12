@@ -54,6 +54,9 @@ parser.add_option("-m", "--monotone", action="store_false",
 parser.add_option("-y", "--nocedal_yuan", action="store_true",
                   default=False, dest="ny",
                   help="Enable Nocedal-Yuan backtracking strategy")
+parser.add_option("-l", "--least_square_multipliers", action="store_true",
+                  default=False, dest="least_squares_pi",
+                  help="Enable least-square estimate of the Lagrange multipliers")
 parser.add_option("-q", "--quasi_newton", action="store", type="string",
                   default=None, dest="quasi_newton",
                   help="Use quasi-newton approximation of Hessian \
@@ -79,6 +82,7 @@ if options.magic_steps is not None:
     elif options.magic_steps == 'cons':
         opts['magic_steps_cons'] = True
 opts['ny'] = options.ny
+opts['least_squares_pi'] = options.least_squares_pi
 opts['quasi_newton'] = options.quasi_newton
 opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
@@ -167,10 +171,10 @@ if not multiple_problems and not error:
     log.info('  Number of general constraints: %-d' % (nlp.m - nlp.nlin))
     log.info('  Initial/Final Objective      : %-g/%-g' % (auglag.f0, auglag.f))
     log.info('  Number of iterations         : %-d' % auglag.niter_total)
-    #log.info('  Number of function evals     : %-d' % funn.nlp.feval)
-    #log.info('  Number of gradient evals     : %-d' % funn.nlp.geval)
-    #log.info('  Number of Hessian  evals     : %-d' % funn.nlp.Heval)
-    #log.info('  Number of Hessian matvecs    : %-d' % funn.nlp.Hprod)
+    log.info('  Number of function evals     : %-d' % auglag.alprob.nlp.nlp.feval)
+    log.info('  Number of Jacobian matvecs   : %-d' % auglag.alprob.nlp.nlp.Jprod)
+    log.info('  Number of Jacobian.T matvecs : %-d' % auglag.alprob.nlp.nlp.JTprod)
+    log.info('  Number of Hessian matvecs    : %-d' % auglag.alprob.nlp.nlp.Hprod)
     log.info('  Setup/Solve time             : %-gs/%-gs' % (t_setup, 0.))
     log.info('  Total time                   : %-gs' % (total_time))
     log.info('--------------------------------')
