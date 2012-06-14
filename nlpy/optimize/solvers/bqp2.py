@@ -132,7 +132,8 @@ class BQP(object):
         """
         Px = self.project(x)
         if not identical(x,Px):
-            raise InfeasibleError, 'Received infeasible point.'
+            print 'Received infeasible point.'
+            raise InfeasibleError
         return None
 
 

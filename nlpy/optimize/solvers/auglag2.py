@@ -610,7 +610,7 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
 
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
-        self.alprob = AugmentedLagrangianLbfgs(nlp)
+        self.alprob = AugmentedLagrangianLbfgs(nlp,**kwargs)
 
 
     def PostIteration(self, **kwargs):
@@ -629,7 +629,7 @@ class AugmentedLagrangianPartialLbfgsFramework(AugmentedLagrangianLbfgsFramework
 
     def __init__(self, nlp, innerSolver, **kwargs):
         AugmentedLagrangianLbfgsFramework.__init__(self, nlp, innerSolver, **kwargs)
-        self.alprob = AugmentedLagrangianPartialLbfgs(nlp)
+        self.alprob = AugmentedLagrangianPartialLbfgs(nlp,**kwargs)
 
 
 # end class
@@ -640,4 +640,4 @@ class AugmentedLagrangianLsr1Framework(AugmentedLagrangianLbfgsFramework):
 
     def __init__(self, nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
-        self.alprob = AugmentedLagrangianLsr1(nlp)
+        self.alprob = AugmentedLagrangianLsr1(nlp,**kwargs)
