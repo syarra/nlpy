@@ -69,7 +69,10 @@ class SBMINFramework:
         self.f0     = kwargs.get('f0',None)
         self.g      = None
         self.g_old  = kwargs.get('g0',None)
+        self.lg     = None
+        self.lg_old = kwargs.get('Lg0',None)
         self.save_g = False              # For methods that need g_{k-1} and g_k
+        self.save_lg = False             # Similar to save_g
         self.pgnorm  = None
         self.tsolve = 0.0
         self.true_step = None
@@ -154,8 +157,12 @@ class SBMINFramework:
         if self.g_old is None:
             self.g_old = self.nlp.grad(self.x)
 
+        if self.lg_old is None and self.save_lg == True:
+            self.lg_old = self.nlp.lgrad(self.x)
+
         self.f        = self.f0
         self.g        = self.g_old
+        self.lg       = self.lg_old
         self.pgnorm = np.max(np.abs( \
                                 self.projected_gradient(self.x,self.g)))
         self.pg0 = self.pgnorm
@@ -194,6 +201,9 @@ class SBMINFramework:
             # Save current gradient for quasi-Newton approximation
             if self.save_g:
                 self.g_old = self.g.copy()
+
+            if self.save_lg:
+                self.lg_old = self.lg.copy()
 
             # Iteratively minimize the quadratic model in the trust region
             #          m(d) = <g, d> + 1/2 <d, Hd>
@@ -393,6 +403,37 @@ class SBMINLqnFramework(SBMINFramework):
         if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
             s = self.true_step
             y = self.g - self.g_old
+            self.nlp.hupdate(s, y)
+
+
+
+class SBMINPartialLqnFramework(SBMINFramework):
+    """
+    Class SBMINPartialLqnFramework is a subclass of SBMINFramework. The method 
+    is based on a trust-region-based algorithm for nonlinear box constrained
+    programming.
+    The only difference is that a limited-memory quasi-Newton Hessian 
+    approximation is used and maintained along the iterations. Unlike the 
+    SBMINLqnFramework class, limited-memory matrix does not approximate the 
+    first order term in the Hessian, i.e. not the pJ'J term.
+    """
+
+    def __init__(self, nlp, TR, TrSolver, **kwargs):
+
+        SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
+        self.save_lg = True
+
+
+    def PostIteration(self, **kwargs):
+        """
+        This method updates the limited-memory quasi-Newton Hessian by appending
+        the most recent (s,y) pair to it and possibly discarding the oldest one
+        if all the memory has been used.
+        """
+        # Quasi-Newton approximation should only update on *successful* iterations
+        if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
+            s = self.true_step
+            y = self.lg - self.lg_old
             self.nlp.hupdate(s, y)
 
 
