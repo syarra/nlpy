@@ -319,8 +319,6 @@ class BQP(object):
 
             if qval <= q0 + self.armijo_factor*slope:
                 sufficient_decrease = True
-            else:
-                sufficient_decrease = False
 
             self.log.debug('alpha = %g, qdiff = %g' % (alpha, q0 + self.armijo_factor*slope - qval))
 
@@ -336,7 +334,7 @@ class BQP(object):
                     alpha *= beta
                 elif sufficient_decrease == False and alpha > 1.0:
                     # Solution is the previous point we tried last iteration
-                    sufficient_decrease == True
+                    sufficient_decrease = True
                     alpha /= beta
                     xTrial = self.project(x - alpha*g)
                 elif sufficient_decrease == False and alpha < 1.0:
