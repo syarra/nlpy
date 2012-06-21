@@ -271,6 +271,81 @@ class BQP(object):
         return (x, (lower, upper))
 
 
+    def projected_gradient_fast(self, x0, g=None, active_set=None, qval=None, **kwargs):
+        """
+        Perform a sequence of projected gradient steps starting from x0.
+        If the actual gradient at x is known, it should be passed using the
+        `g` keyword.
+        If the active set at x0 is known, it should be passed using the
+        `active_set` keyword.
+        If the value of the quadratic objective at x0 is known, it should
+        be passed using the `qval` keyword.
+
+        Return (x,(lower,upper)) where x is an updated iterate that satisfies
+        a sufficient decrease condition or at which the active set, given by
+        (lower,upper), settled down.
+
+        This function is based on the Cauchy point calculator in TRON: 
+        if a sufficient decrease is found for the first point computed, the 
+        algorithm takes a longer step as long as the sufficient decrease 
+        condition is satisfied.
+        """
+        beta = kwargs.get('beta',2)
+        qp = self.qp
+
+        if g is None:
+            g = self.qp.grad(x0)
+
+        if qval is None:
+            qval = self.qp.obj(x0)
+
+        if active_set is None:
+            active_set = self.get_active_set(x0)
+        lower, upper = active_set
+
+        x = x0.copy()
+        q0 = qval
+        alpha = 1.0
+        sufficient_decrease = False        
+        iter = 0
+
+        while not sufficient_decrease and alpha > 1e-20 and alpha < 1e+20:
+
+            iter += 1
+
+            xTrial = self.project(x - alpha*g)
+            qval = qp.obj(xTrial)
+            slope = np.dot(g, xTrial - x)
+
+            if qval <= q0 + self.armijo_factor*slope:
+                sufficient_decrease = True
+
+            if iter == 1:
+                if sufficient_decrease == True:
+                    sufficient_decrease = False
+                    alpha *= beta
+                else:
+                    alpha /= beta
+            else:
+                if sufficient_decrease == True and alpha > 1.0:
+                    sufficient_decrease = False
+                    alpha *= beta
+                elif sufficient_decrease == False and alpha > 1.0:
+                    # Solution is the previous point we tried last iteration
+                    sufficient_decrease == True
+                    alpha /= beta
+                    xTrial = self.project(x - alpha*g)
+                elif sufficient_decrease == False and alpha < 1.0:
+                    alpha /= beta
+                # end if
+            # end if
+
+        # end while
+        lower, upper = self.get_active_set(xTrial)
+
+        return (x, (lower, upper))
+
+
     def to_boundary(self, x, d, free_vars):
         """
         Given vectors `x` and `d` and some bounds on x,
@@ -305,7 +380,7 @@ class BQP(object):
                 pdb.set_trace()
 
         # Do another projected gradient update
-        (x, (lower,upper)) = self.projected_gradient(x)
+        (x, (lower,upper)) = self.projected_gradient_fast(x)
 
         return (x, (lower,upper))
 
@@ -352,7 +427,7 @@ class BQP(object):
                 continue
 
             # Projected-gradient phase: determine next working set.
-            (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
+            (x, (lower,upper)) = self.projected_gradient_fast(x, g=g, active_set=(lower,upper))
             g = qp.grad(x)
             qval = qp.obj(x)
             self.log.debug('q after projected gradient = %8.2g' % qval)
