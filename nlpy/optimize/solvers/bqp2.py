@@ -319,6 +319,10 @@ class BQP(object):
 
             if qval <= q0 + self.armijo_factor*slope:
                 sufficient_decrease = True
+            else:
+                sufficient_decrease = False
+
+            self.log.debug('alpha = %g, qdiff = %g' % (alpha, q0 + self.armijo_factor*slope - qval))
 
             if iter == 1:
                 if sufficient_decrease == True:
@@ -341,6 +345,7 @@ class BQP(object):
             # end if
 
         # end while
+
         lower, upper = self.get_active_set(xTrial)
 
         return (x, (lower, upper))
