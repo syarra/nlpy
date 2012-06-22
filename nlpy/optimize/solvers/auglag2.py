@@ -272,6 +272,26 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
 
 
+class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianLbfgs):
+    '''
+    Only apply the LBFGS approximation to the second order terms of the 
+    Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
+    '''
+
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangianLbfgs.__init__(self, nlp, **kwargs)
+
+
+    def hprod(self, x, z, v, **kwargs):
+        w = self.Hessapp.matvec(v)
+        J = self.nlp.jac(x)
+        w += self.rho * (J.T * (J * v))
+        return w
+
+
+
+# end class
+
 class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
     '''
     Use an LSR1 approximation instead of the LBFGS approximation.
@@ -329,7 +349,9 @@ class AugmentedLagrangianFramework(object):
         self.a_eta = kwargs.get('a_eta',0.1)
         self.b_eta = kwargs.get('b_eta',0.9)
         self.omega_rel = kwargs.get('omega_rel',1.e-5)
+        self.omega_abs = kwargs.get('omega_abs',1.e-7)
         self.eta_rel = kwargs.get('eta_rel',1.e-5)
+        self.eta_abs = kwargs.get('eta_abs',1.e-7)
 
         self.f0 = self.f = None
 
@@ -418,10 +440,17 @@ class AugmentedLagrangianFramework(object):
         # Use a least-squares estimate of the multipliers to start (if requested)
         if self.least_squares_pi:
             self.alprob.lsqr_multipliers(self.x)
+            self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
         # First function and gradient evaluation
         phi = self.alprob.obj(self.x)
-        #dphi = self.alprob.grad(self.x)
+        dphi = self.alprob.grad(self.x)
+
+        # "Smart" initialization of slack variables using the magical step 
+        # function that is already available
+        m_step_init = self.alprob.magical_step(self.x, dphi)
+        self.x += m_step_init
+
         dL = self.alprob.lgrad(self.x)
         self.f = self.f0 = self.alprob.nlp.obj(self.x[:original_n])
 
@@ -441,8 +470,8 @@ class AugmentedLagrangianFramework(object):
 
         self.omega = self.omega_init
         self.eta = self.eta_init
-        self.omega_opt = self.omega_rel * self.pg0 + 1e-7
-        self.eta_opt = self.eta_rel * max_cons + 1e-7
+        self.omega_opt = self.omega_rel * self.pg0 + self.omega_abs
+        self.eta_opt = self.eta_rel * max_cons + self.eta_abs
 
         self.iter = 0
         self.inner_fail_count = 0
@@ -587,7 +616,7 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
 
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
-        self.alprob = AugmentedLagrangianLbfgs(nlp)
+        self.alprob = AugmentedLagrangianLbfgs(nlp,**kwargs)
 
 
     def PostIteration(self, **kwargs):
@@ -602,8 +631,19 @@ class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
 
 
 
+class AugmentedLagrangianPartialLbfgsFramework(AugmentedLagrangianLbfgsFramework):
+
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianLbfgsFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianPartialLbfgs(nlp,**kwargs)
+
+
+# end class
+
+
+
 class AugmentedLagrangianLsr1Framework(AugmentedLagrangianLbfgsFramework):
 
     def __init__(self, nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
-        self.alprob = AugmentedLagrangianLsr1(nlp)
+        self.alprob = AugmentedLagrangianLsr1(nlp,**kwargs)

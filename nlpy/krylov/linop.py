@@ -285,7 +285,7 @@ class ReducedLinearOperator:
             if isinstance(transpose_of, ReducedLinearOperator):
                 self.T = transpose_of
             else:
-                msg = 'kwarg transposed_of must be a LinearOperator.'
+                msg = 'kwarg transposed_of must be a ReducedLinearOperator.'
                 msg += ' Got ' + str(transpose_of.__class__)
                 raise ValueError, msg
 

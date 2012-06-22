@@ -12,6 +12,7 @@ jprod and jtprod functions
 
 - Magical steps for slack variables
 	- implemented, May 16, 2012
+	- initialization of slack variables with magical steps added June 5, 2012
 
 - Nonmonotone update strategy
     - implemented, May 31, 2012
