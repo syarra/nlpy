@@ -58,6 +58,9 @@ class SufficientDecreaseCG(TruncatedCG):
         self.best_decrease = 0
         self.cg_reltol = kwargs.get('cg_reltol', 0.1)
         self.detect_stalling = kwargs.get('detect_stalling', True)
+        self.detect_bounds = kwargs.get('detect_bounds', False)
+        self.s_l = kwargs.get('s_l', None)
+        self.s_u = kwargs.get('s_u', None)
 
 
     def post_iteration(self):
@@ -66,15 +69,25 @@ class SufficientDecreaseCG(TruncatedCG):
         costs one dot product, five products between scalars and two
         additions of scalars.
         """
-        if not self.detect_stalling: return None
-        p = self.p ; g = self.g ; pHp = self.pHp ; alpha = self.alpha
-        qOld = self.qval
-        qCur = qOld + alpha * np.dot(g,p) + 0.5 * alpha*alpha * pHp
-        decrease = qOld - qCur
-        if decrease <= self.cg_reltol * self.best_decrease:
-            raise UserExitRequest
-        else:
-            self.best_decrease = max(self.best_decrease, decrease)
+        if self.detect_stalling: 
+
+            p = self.p ; g = self.g ; pHp = self.pHp ; alpha = self.alpha
+            qOld = self.qval
+            qCur = qOld + alpha * np.dot(g,p) + 0.5 * alpha*alpha * pHp
+            decrease = qOld - qCur
+            if decrease <= self.cg_reltol * self.best_decrease:
+                raise UserExitRequest
+            else:
+                self.best_decrease = max(self.best_decrease, decrease)
+
+        elif self.detect_bounds:
+
+            s = self.step
+            s_l = self.s_l
+            s_u = self.s_u
+            if (s <= s_l).any() or (s_u <= s).any():
+                raise UserExitRequest
+
         return None
 
 
@@ -537,6 +550,144 @@ class BQP(object):
 
             self.log.info(self.format % (iter, qval,
                           pgNorm, cg.niter))
+
+        self.exitOptimal = exitOptimal
+        self.exitIter = exitIter
+        self.niter = iter
+        self.x = x
+        self.qval = qval
+        self.lower = lower
+        self.upper = upper
+        return
+
+
+
+class BQP_new(BQP):
+    """
+    This is a new version of the BQP class that incorporates more of the 
+    ideas of the TRON solver (Lin & More, 1999) into the solve function.
+    """
+
+    def __init__(self, qp, **kwargs):
+        BQP.__init__(self, qp, **kwargs)
+
+
+    def solve(self, **kwargs):
+
+        # Shortcuts for convenience.
+        qp = self.qp
+        n = qp.n
+        maxiter = kwargs.get('maxiter', 5*n)
+        self.stoptol = kwargs.get('stoptol', 1.0e-3)
+
+        # Compute initial data.
+
+        # self.log.debug('q before initial x projection = %8.2g' % qp.obj(qp.x0))
+        x = self.project(qp.x0)
+        self.log.debug('q after initial x projection = %8.2g' % qp.obj(x))
+        lower, upper = self.get_active_set(x)
+        iter = 0
+
+        # Compute stopping tolerance.
+        g = qp.grad(x)
+        gNorm = np.linalg.norm(g)
+        pg = self.pgrad(x, g=g, active_set=(lower,upper))
+        pgNorm = np.linalg.norm(pg)
+
+        stoptol = self.stoptol*pgNorm + 1e-5
+        self.log.debug('Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm))
+
+        exitOptimal = exitIter = False
+
+        # Print out header and initial log.
+        self.log.info(self.hline)
+        self.log.info(self.header)
+        self.log.info(self.hline)
+        self.log.info(self.format0 % (iter,0.0,
+                                             pgNorm, ''))
+
+        while not (exitOptimal or exitIter):
+
+            iter += 1
+            if iter >= maxiter:
+                exitIter = True
+                continue
+
+            # Projected-gradient phase: determine next working set.
+            (x, (lower,upper)) = self.projected_gradient_fast(x, g=g, active_set=(lower,upper))
+            g = qp.grad(x)
+            qval = qp.obj(x)
+            max_step_l = self.Lvar - x
+            max_step_u = self.Uvar - x
+            self.log.debug('q after projected gradient = %8.2g' % qval)
+            pg = self.pgrad(x, g=g, active_set=(lower,upper))
+            pgNorm = np.linalg.norm(pg)
+
+            if pgNorm <= stoptol:
+                exitOptimal = True
+                self.log.info(self.format % (iter, qval,
+                              pgNorm, 0))
+
+                continue
+
+            # Conjugate gradient phase: explore current face.
+
+            # 1. Obtain indices of the free variables.
+            fixed_vars = np.concatenate((lower,upper))
+            free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
+
+            # 2. Construct reduced QP.
+            self.log.debug('Starting CG on current face.')
+
+            ZHZ = ReducedHessian(self.H, free_vars)
+            Zg  = g[free_vars]
+            sl = max_step_l[free_vars]
+            su = max_step_u[free_vars]
+
+            cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=False, detect_bounds=True, s_l=sl, s_u=su)
+            try:
+                cg.Solve()
+            except UserExitRequest:
+                # CG is no longer making substantial progress.
+                self.log.debug('CG is no longer making substantial progress (%d its)' % cg.niter)
+                pass
+
+            # At this point, CG returned from a clean user exit or
+            # because its original stopping test was triggered.
+            self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
+            #if cg.status == 'residual small':
+            #    self.log.debug('CG residual = %g, pHp = %g' % (cg.ry**0.5,cg.pHp))
+
+            # 3. Expand search direction.
+            d = np.zeros(n)
+            d[free_vars] = cg.step
+
+            if cg.infDescent and cg.step.size != 0 and cg.dir.size !=0:
+                self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
+
+                # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+                nc_dir = np.zeros(n)
+                nc_dir[free_vars] = cg.dir
+                (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
+            else:
+                # 4. Update x using projected linesearch with initial step=1.
+                (x, qval) = self.projected_linesearch(x, g, d, qval)
+
+            self.log.debug('q after CG pass = %8.2g' % qp.obj(x))
+
+            g = qp.grad(x)
+            pg = self.pgrad(x, g=g, active_set=(lower,upper))
+            pgNorm = np.linalg.norm(pg)
+
+            # Only one CG pass per iteration is needed, since we are no longer 
+            # concerned about active set settling down (relaxed assumption)
+
+            if pgNorm <= stoptol:
+                exitOptimal = True
+            
+            self.log.info(self.format % (iter, qval,
+                              pgNorm, cg.niter))
+
 
         self.exitOptimal = exitOptimal
         self.exitIter = exitIter
