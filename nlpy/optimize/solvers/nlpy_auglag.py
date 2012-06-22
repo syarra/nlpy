@@ -175,6 +175,6 @@ if not multiple_problems and not error:
     log.info('  Number of Jacobian matvecs   : %-d' % auglag.alprob.nlp.nlp.Jprod)
     log.info('  Number of Jacobian.T matvecs : %-d' % auglag.alprob.nlp.nlp.JTprod)
     log.info('  Number of Hessian matvecs    : %-d' % auglag.alprob.nlp.nlp.Hprod)
-    log.info('  Setup/Solve time             : %-gs/%-gs' % (t_setup, 0.))
+    log.info('  Setup/Solve time             : %-gs/%-gs' % (t_setup, auglag.tsolve))
     log.info('  Total time                   : %-gs' % (total_time))
     log.info('--------------------------------')

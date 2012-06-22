@@ -36,6 +36,7 @@ from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
 # from nlpy.optimize.solvers.sbmin import SBMINLqnFramework
 from nlpy.tools.exceptions import UserExitRequest
 from nlpy.tools.utils import where
+from nlpy.tools.timing import cputime
 from pysparse.sparse.pysparseMatrix import PysparseMatrix
 
 
@@ -366,7 +367,8 @@ class AugmentedLagrangianFramework(object):
             self.alprob.lsqr_multipliers(self.x)
         else:
             self.alprob.pi -= self.alprob.rho*convals
-        self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
+        if self.alprob.nlp.m != 0:
+            self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
         if status == 'opt':
             # Safeguard: tighten tolerances only if desired optimality
@@ -449,6 +451,8 @@ class AugmentedLagrangianFramework(object):
 
         # Convergence check
         converged = Pmax <= self.omega_opt and max_cons <= self.eta_opt
+
+        t = cputime()
 
         # Print out header and initial log.
         self.log.info(self.hline)
@@ -557,6 +561,8 @@ class AugmentedLagrangianFramework(object):
                 self.status = 'usr'
 
         # end while
+
+        self.tsolve = cputime() - t    # Solve time
 
         # Solution output, etc.
         if converged:
