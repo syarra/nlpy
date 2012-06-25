@@ -58,9 +58,6 @@ class SufficientDecreaseCG(TruncatedCG):
         self.best_decrease = 0
         self.cg_reltol = kwargs.get('cg_reltol', 0.1)
         self.detect_stalling = kwargs.get('detect_stalling', True)
-        self.detect_bounds = kwargs.get('detect_bounds', False)
-        self.s_l = kwargs.get('s_l', None)
-        self.s_u = kwargs.get('s_u', None)
 
 
     def post_iteration(self):
@@ -80,7 +77,30 @@ class SufficientDecreaseCG(TruncatedCG):
             else:
                 self.best_decrease = max(self.best_decrease, decrease)
 
-        elif self.detect_bounds:
+        return None
+
+
+
+class BoundedCG(TruncatedCG):
+    """
+    An implementation of the conjugate-gradient algorithm which terminates 
+    if the step violates user-defined bounds.
+
+    See the documentation of TruncatedCG for more information.
+    """
+    def __init__(self, g, H, **kwargs):
+        TruncatedCG.__init__(self, g, H, **kwargs)
+        self.name = 'Bound-CG'
+        self.detect_bounds = kwargs.get('detect_bounds', False)
+        self.s_l = kwargs.get('s_l', None)
+        self.s_u = kwargs.get('s_u', None)
+
+
+    def post_iteration(self):
+        """
+        Implement the stopping condition for violated bounds.
+        """
+        if self.detect_bounds:
 
             s = self.step
             s_l = self.s_l
@@ -572,6 +592,66 @@ class BQP_new(BQP):
         BQP.__init__(self, qp, **kwargs)
 
 
+    def projected_linesearch(self, x0, g, d, qval, active_set=None, **kwargs):
+        """
+        Perform an Armijo-like projected linesearch in the direction d.
+        Here, x is the current iterate, g is the gradient at x,
+        d is the search direction, and qval is q(x). 
+
+        This function is based on the Cauchy point calculator in TRON: 
+        if a sufficient decrease is found for the first point computed, the 
+        algorithm increases the step length as long as the sufficient decrease 
+        condition remains satisfied.
+        """
+        alpha = kwargs.get('alpha',1.0)
+        beta = kwargs.get('beta',2.0)
+        qp = self.qp
+
+        x = x0.copy()
+        q0 = qval
+        sufficient_decrease = False        
+        iter = 0
+
+        while not sufficient_decrease and alpha > 1e-20 and alpha < 1e+20:
+
+            iter += 1
+
+            xTrial = self.project(x - alpha*g)
+            qval = qp.obj(xTrial)
+            slope = np.dot(g, xTrial - x)
+
+            if qval <= q0 + self.armijo_factor*slope:
+                sufficient_decrease = True
+
+            self.log.debug('alpha = %g, qdiff = %g' % (alpha, q0 + self.armijo_factor*slope - qval))
+
+            if iter == 1:
+                if sufficient_decrease == True:
+                    sufficient_decrease = False
+                    alpha *= beta
+                else:
+                    alpha /= beta
+            else:
+                if sufficient_decrease == True and alpha > 1.0:
+                    sufficient_decrease = False
+                    alpha *= beta
+                elif sufficient_decrease == False and alpha > 1.0:
+                    # Solution is the previous point we tried last iteration
+                    sufficient_decrease = True
+                    alpha /= beta
+                    xTrial = self.project(x - alpha*g)
+                elif sufficient_decrease == False and alpha < 1.0:
+                    alpha /= beta
+                # end if
+            # end if
+
+        # end while
+
+        lower, upper = self.get_active_set(xTrial)
+
+        return (xTrial, qval, (lower, upper))
+
+
     def solve(self, **kwargs):
 
         # Shortcuts for convenience.
@@ -614,9 +694,9 @@ class BQP_new(BQP):
                 continue
 
             # Projected-gradient phase: determine next working set.
-            (x, (lower,upper)) = self.projected_gradient_fast(x, g=g, active_set=(lower,upper))
+            (x, qval, (lower,upper)) = self.projected_linesearch(x, g, -g, qval, active_set=(lower,upper))
             g = qp.grad(x)
-            qval = qp.obj(x)
+            # qval = qp.obj(x)
             max_step_l = self.Lvar - x
             max_step_u = self.Uvar - x
             self.log.debug('q after projected gradient = %8.2g' % qval)
@@ -644,7 +724,7 @@ class BQP_new(BQP):
             sl = max_step_l[free_vars]
             su = max_step_u[free_vars]
 
-            cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=False, detect_bounds=True, s_l=sl, s_u=su)
+            cg = BoundedCG(Zg, ZHZ, detect_bounds=True, s_l=sl, s_u=su)
             try:
                 cg.Solve()
             except UserExitRequest:
@@ -669,18 +749,20 @@ class BQP_new(BQP):
                 nc_dir = np.zeros(n)
                 nc_dir[free_vars] = cg.dir
                 (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
+                # TODO: check if we can replace this step with another projected linesearch
             else:
                 # 4. Update x using projected linesearch with initial step=1.
-                (x, qval) = self.projected_linesearch(x, g, d, qval)
+                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper))
 
-            self.log.debug('q after CG pass = %8.2g' % qp.obj(x))
+            self.log.debug('q after CG pass = %8.2g' % qval)
 
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower,upper))
             pgNorm = np.linalg.norm(pg)
 
             # Only one CG pass per iteration is needed, since we are no longer 
-            # concerned about active set settling down (relaxed assumption)
+            # concerned about active set settling down (relaxed assumption 
+            # within TRON)
 
             if pgNorm <= stoptol:
                 exitOptimal = True
