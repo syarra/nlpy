@@ -300,8 +300,8 @@ class BQP(object):
 
         This function is based on the Cauchy point calculator in TRON: 
         if a sufficient decrease is found for the first point computed, the 
-        algorithm takes a longer step as long as the sufficient decrease 
-        condition is satisfied.
+        algorithm increases the step length as long as the sufficient decrease 
+        condition remains satisfied.
         """
         beta = kwargs.get('beta',2)
         qp = self.qp
@@ -359,7 +359,7 @@ class BQP(object):
 
         lower, upper = self.get_active_set(xTrial)
 
-        return (x, (lower, upper))
+        return (xTrial, (lower, upper))
 
 
     def to_boundary(self, x, d, free_vars):
