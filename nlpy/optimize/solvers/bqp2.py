@@ -92,6 +92,7 @@ class BoundedCG(TruncatedCG):
         TruncatedCG.__init__(self, g, H, **kwargs)
         self.name = 'Bound-CG'
         self.detect_bounds = kwargs.get('detect_bounds', False)
+        self.nviol = kwargs.get('nviol',5)
         self.s_l = kwargs.get('s_l', None)
         self.s_u = kwargs.get('s_u', None)
 
@@ -105,7 +106,10 @@ class BoundedCG(TruncatedCG):
             s = self.step
             s_l = self.s_l
             s_u = self.s_u
-            if (s <= s_l).any() or (s_u <= s).any():
+            l_viol = where(s < s_l)
+            u_viol = where(s_u < s)
+            if len(l_viol) + len(u_viol) >= self.nviol:
+                self.log.debug('Too many bound violations detected: exiting.')
                 raise UserExitRequest
 
         return None
@@ -755,7 +759,7 @@ class BQP_new(BQP):
                 # TODO: check if we can replace this step with another projected linesearch
             else:
                 # 4. Update x using projected linesearch with initial step=1.
-                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper))
+                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper), backtrack_only=True)
 
             self.log.debug('q after CG pass = %8.2g' % qval)
 
