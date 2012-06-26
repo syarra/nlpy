@@ -258,7 +258,6 @@ class SBMINFramework:
                 self.x = x_trial
                 self.f = f_trial
                 self.g = nlp.grad(self.x)
-                self.lg = nlp.lgrad(self.x)
 
                 if self.magic_steps_cons:
                     m_step = nlp.magical_step(self.x, self.g)
@@ -266,6 +265,8 @@ class SBMINFramework:
                     self.true_step += m_step
                     self.f = nlp.obj(self.x)
                     self.g = nlp.grad(self.x)
+
+                if self.save_lg:
                     self.lg = nlp.lgrad(self.x)
 
                 self.pgnorm = np.max(np.abs( \
@@ -318,7 +319,6 @@ class SBMINFramework:
                         self.x = x_trial
                         self.f = f_trial
                         self.g = nlp.grad(self.x)
-                        self.lg = nlp.lgrad(self.x)
 
                         # Conservative magical steps can also apply if backtracking succeeds
                         if self.magic_steps_cons:
@@ -327,6 +327,8 @@ class SBMINFramework:
                             self.true_step += m_step
                             self.f = nlp.obj(self.x)
                             self.g = nlp.grad(self.x)
+
+                        if self.save_lg:
                             self.lg = nlp.lgrad(self.x)
 
                         self.pgnorm = np.max(np.abs( \
