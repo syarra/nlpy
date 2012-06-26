@@ -617,7 +617,7 @@ class BQP_new(BQP):
 
             iter += 1
 
-            xTrial = self.project(x - alpha*g)
+            xTrial = self.project(x + alpha*d)
             qval = qp.obj(xTrial)
             slope = np.dot(g, xTrial - x)
 
@@ -754,7 +754,7 @@ class BQP_new(BQP):
                 # TODO: check if we can replace this step with another projected linesearch
             else:
                 # 4. Update x using projected linesearch with initial step=1.
-                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper), backtrack_only=True)
+                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper))
 
             self.log.debug('q after CG pass = %8.2g' % qval)
 
