@@ -640,7 +640,8 @@ class BQP_new(BQP):
                     # Solution is the previous point we tried last iteration
                     sufficient_decrease = True
                     alpha /= beta
-                    xTrial = self.project(x - alpha*g)
+                    xTrial = self.project(x + alpha*d)
+                    qval = qp.obj(xTrial)
                 elif sufficient_decrease == False and alpha < 1.0:
                     alpha /= beta
                 # end if
