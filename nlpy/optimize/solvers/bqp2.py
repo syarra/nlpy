@@ -605,6 +605,7 @@ class BQP_new(BQP):
         """
         alpha = kwargs.get('alpha',1.0)
         beta = kwargs.get('beta',2.0)
+        backtrack_only = kwargs.get('backtrack_only',False)
         qp = self.qp
 
         x = x0.copy()
@@ -626,10 +627,10 @@ class BQP_new(BQP):
             self.log.debug('alpha = %g, qdiff = %g' % (alpha, q0 + self.armijo_factor*slope - qval))
 
             if iter == 1:
-                if sufficient_decrease == True:
+                if sufficient_decrease == True and not backtrack_only:
                     sufficient_decrease = False
                     alpha *= beta
-                else:
+                elif sufficient_decrease == False:
                     alpha /= beta
             else:
                 if sufficient_decrease == True and alpha > 1.0:
@@ -664,7 +665,8 @@ class BQP_new(BQP):
 
         # self.log.debug('q before initial x projection = %8.2g' % qp.obj(qp.x0))
         x = self.project(qp.x0)
-        self.log.debug('q after initial x projection = %8.2g' % qp.obj(x))
+        qval = qp.obj(x)
+        self.log.debug('q after initial x projection = %8.2g' % qval)
         lower, upper = self.get_active_set(x)
         iter = 0
 
@@ -752,7 +754,7 @@ class BQP_new(BQP):
                 # TODO: check if we can replace this step with another projected linesearch
             else:
                 # 4. Update x using projected linesearch with initial step=1.
-                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper))
+                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper), backtrack_only=True)
 
             self.log.debug('q after CG pass = %8.2g' % qval)
 
