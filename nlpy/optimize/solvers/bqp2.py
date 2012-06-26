@@ -416,7 +416,7 @@ class BQP(object):
                 pdb.set_trace()
 
         # Do another projected gradient update
-        (x, (lower,upper)) = self.projected_gradient_fast(x)
+        (x, (lower,upper)) = self.projected_gradient(x)
 
         return (x, (lower,upper))
 
@@ -463,7 +463,7 @@ class BQP(object):
                 continue
 
             # Projected-gradient phase: determine next working set.
-            (x, (lower,upper)) = self.projected_gradient_fast(x, g=g, active_set=(lower,upper))
+            (x, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper))
             g = qp.grad(x)
             qval = qp.obj(x)
             self.log.debug('q after projected gradient = %8.2g' % qval)
