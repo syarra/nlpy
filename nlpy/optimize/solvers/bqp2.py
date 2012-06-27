@@ -772,6 +772,7 @@ class BQP_new(BQP):
             # active constraints if necessary
 
             active_set_settled = False
+            niter_cg_total = 0
 
             while not active_set_settled:
 
@@ -818,6 +819,7 @@ class BQP_new(BQP):
                     (x, qval, (lowerTrial,upperTrial)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper), backtrack_only=True)
 
                 self.log.debug('q after CG pass = %8.2g' % qval)
+                niter_cg_total += cg.niter
 
                 # Recompute gradient for next iteration
                 g = qp.grad(x)
@@ -835,7 +837,7 @@ class BQP_new(BQP):
                 exitOptimal = True
             
             self.log.info(self.format % (iter, qval,
-                              pgNorm, cg.niter))
+                              pgNorm, niter_cg_total))
 
 
         self.exitOptimal = exitOptimal
