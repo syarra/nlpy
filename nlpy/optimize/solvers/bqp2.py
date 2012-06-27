@@ -92,7 +92,7 @@ class BoundedCG(TruncatedCG):
         TruncatedCG.__init__(self, g, H, **kwargs)
         self.name = 'Bound-CG'
         self.detect_bounds = kwargs.get('detect_bounds', False)
-        self.nviol = kwargs.get('nviol',5)
+        self.nviol = kwargs.get('nviol',1)
         self.s_l = kwargs.get('s_l', None)
         self.s_u = kwargs.get('s_u', None)
 
@@ -658,6 +658,57 @@ class BQP_new(BQP):
         return (xTrial, qval, (lower, upper))
 
 
+    def projected_gradient(self, x0, g=None, active_set=None, qval=None, **kwargs):
+        """
+        Perform a sequence of projected gradient steps.
+
+        The process is repeated for a fixed number of iterations or until the 
+        active set settles down and the decrease is well below the best.
+        """
+        maxiter = kwargs.get('maxiter', 10)
+        qp = self.qp
+
+        if g is None:
+            g = self.qp.grad(x0)
+
+        if qval is None:
+            qval = self.qp.obj(x0)
+
+        if active_set is None:
+            active_set = self.get_active_set(x0)
+        lower, upper = active_set
+
+        x = x0.copy()
+        settled_down = False
+        sufficient_decrease = False
+        best_decrease = 0
+        iter = 0
+
+        while not settled_down and not sufficient_decrease and \
+              iter < maxiter:
+
+            iter += 1
+            qOld = qval
+            # TODO: Use appropriate initial steplength.
+            (x, qval, new_active_set) = self.projected_linesearch(x, g, -g, qval, active_set)
+
+            # Check decrease in objective.
+            decrease = qOld - qval
+
+            if decrease <= self.pgrad_reltol * best_decrease:
+                sufficient_decrease = True
+            best_decrease = max(best_decrease, decrease)
+
+            # Check active set at updated iterate.
+            lowerTrial, upperTrial = new_active_set
+            if identical(lower,lowerTrial) and identical(upper,upperTrial):
+                settled_down = True
+            lower, upper = lowerTrial, upperTrial
+            #g = self.qp.grad(x)
+
+        return (x, qval, (lower, upper))
+
+
     def solve(self, **kwargs):
 
         # Shortcuts for convenience.
@@ -701,7 +752,7 @@ class BQP_new(BQP):
                 continue
 
             # Projected-gradient phase: determine next working set.
-            (x, qval, (lower,upper)) = self.projected_linesearch(x, g, -g, qval, active_set=(lower,upper))
+            (x, qval, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper), qval=qval)
             g = qp.grad(x)
             # qval = qp.obj(x)
             max_step_l = self.Lvar - x
@@ -717,59 +768,68 @@ class BQP_new(BQP):
 
                 continue
 
-            # Conjugate gradient phase: explore current face.
+            # Conjugate gradient phase: explore current face and add more 
+            # active constraints if necessary
 
-            # 1. Obtain indices of the free variables.
-            fixed_vars = np.concatenate((lower,upper))
-            free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
+            active_set_settled = False
 
-            # 2. Construct reduced QP.
-            self.log.debug('Starting CG on current face.')
+            while not active_set_settled:
 
-            ZHZ = ReducedHessian(self.H, free_vars)
-            Zg  = g[free_vars]
-            sl = max_step_l[free_vars]
-            su = max_step_u[free_vars]
+                # 1. Obtain indices of the free variables.
+                fixed_vars = np.concatenate((lower,upper))
+                free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
 
-            cg = BoundedCG(Zg, ZHZ, detect_bounds=True, s_l=sl, s_u=su)
-            try:
-                cg.Solve()
-            except UserExitRequest:
-                # CG is no longer making substantial progress.
-                self.log.debug('CG is no longer making substantial progress (%d its)' % cg.niter)
-                pass
+                # 2. Construct reduced QP.
+                self.log.debug('Starting CG on current face.')
 
-            # At this point, CG returned from a clean user exit or
-            # because its original stopping test was triggered.
-            self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
-            #if cg.status == 'residual small':
-            #    self.log.debug('CG residual = %g, pHp = %g' % (cg.ry**0.5,cg.pHp))
+                ZHZ = ReducedHessian(self.H, free_vars)
+                Zg  = g[free_vars]
+                sl = max_step_l[free_vars]
+                su = max_step_u[free_vars]
 
-            # 3. Expand search direction.
-            d = np.zeros(n)
-            d[free_vars] = cg.step
+                cg = BoundedCG(Zg, ZHZ, detect_bounds=True, s_l=sl, s_u=su)
+                try:
+                    cg.Solve()
+                except UserExitRequest:
+                    # CG is no longer making substantial progress.
+                    self.log.debug('CG is no longer making substantial progress (%d its)' % cg.niter)
+                    pass
 
-            if cg.infDescent and cg.step.size != 0 and cg.dir.size !=0:
-                self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
+                # At this point, CG returned from a clean user exit or
+                # because its original stopping test was triggered.
+                self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
+                #if cg.status == 'residual small':
+                #    self.log.debug('CG residual = %g, pHp = %g' % (cg.ry**0.5,cg.pHp))
 
-                # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
-                nc_dir = np.zeros(n)
-                nc_dir[free_vars] = cg.dir
-                (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
-                # TODO: check if we can replace this step with another projected linesearch
-            else:
-                # 4. Update x using projected linesearch with initial step=1.
-                (x, qval, (lower,upper)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper), backtrack_only=True)
+                # 3. Expand search direction.
+                d = np.zeros(n)
+                d[free_vars] = cg.step
 
-            self.log.debug('q after CG pass = %8.2g' % qval)
+                if cg.infDescent and cg.step.size != 0 and cg.dir.size !=0:
+                    self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
 
-            g = qp.grad(x)
-            pg = self.pgrad(x, g=g, active_set=(lower,upper))
-            pgNorm = np.linalg.norm(pg)
+                    # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+                    nc_dir = np.zeros(n)
+                    nc_dir[free_vars] = cg.dir
+                    (x, (lowerTrial,upperTrial)) = self.to_boundary(x,nc_dir,free_vars)
+                    # TODO: check if we can replace above step with another projected linesearch
+                else:
+                    # 4. Update x using projected linesearch with initial step=1.
+                    (x, qval, (lowerTrial,upperTrial)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper), backtrack_only=True)
 
-            # Only one CG pass per iteration is needed, since we are no longer 
-            # concerned about active set settling down (relaxed assumption 
-            # within TRON)
+                self.log.debug('q after CG pass = %8.2g' % qval)
+
+                # Recompute gradient for next iteration
+                g = qp.grad(x)
+                pg = self.pgrad(x, g=g, active_set=(lower,upper))
+                pgNorm = np.linalg.norm(pg)
+
+                # Check if new active set matches old one
+                if identical(lower,lowerTrial) and identical(upper,upperTrial):
+                    active_set_settled = True
+                lower, upper = lowerTrial, upperTrial
+
+            # end while
 
             if pgNorm <= stoptol:
                 exitOptimal = True
