@@ -748,6 +748,8 @@ class BQP_new(BQP):
         self.log.info(self.format0 % (iter,0.0,
                                              pgNorm, ''))
 
+        self.niter_cg_counter = 0
+
         while not (exitOptimal or exitIter):
 
             iter += 1
@@ -847,12 +849,16 @@ class BQP_new(BQP):
 
             # end while
 
+            self.niter_cg_counter += niter_cg_total
+
             if pgNorm <= stoptol:
                 exitOptimal = True
             
             self.log.info(self.format % (iter, qval,
                               pgNorm, niter_cg_total))
 
+
+        self.log.info('          Total CG iterations = %d' % self.niter_cg_counter)
 
         self.exitOptimal = exitOptimal
         self.exitIter = exitIter
