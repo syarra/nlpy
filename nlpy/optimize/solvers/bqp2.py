@@ -620,6 +620,7 @@ class BQP_new(BQP):
         while not sufficient_decrease and alpha > 1e-20 and alpha < 1e+20:
 
             iter += 1
+            qprev = qval
 
             xTrial = self.project(x + alpha*d)
             qval = qp.obj(xTrial)
@@ -638,8 +639,11 @@ class BQP_new(BQP):
                     alpha /= beta
             else:
                 if sufficient_decrease == True and alpha > 1.0:
-                    sufficient_decrease = False
-                    alpha *= beta
+                    # If the function value is not changing, and we are increasing alpha, stop
+                    # (It could be a corner of the box)
+                    if qval != qprev:
+                        sufficient_decrease = False
+                        alpha *= beta
                 elif sufficient_decrease == False and alpha > 1.0:
                     # Solution is the previous point we tried last iteration
                     sufficient_decrease = True
@@ -752,7 +756,11 @@ class BQP_new(BQP):
                 continue
 
             # Projected-gradient phase: determine next working set.
-            (x, qval, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper), qval=qval)
+            # (x, qval, (lower,upper)) = self.projected_gradient(x, g=g, active_set=(lower,upper), qval=qval)
+
+            # Alternative to formal projected-gradient algorithm: a single projected linesearch call
+            (x, qval, (lower,upper)) = self.projected_linesearch(x, g, -g, qval, (lower, upper))
+
             g = qp.grad(x)
             # qval = qp.obj(x)
             max_step_l = self.Lvar - x
@@ -817,6 +825,12 @@ class BQP_new(BQP):
                 else:
                     # 4. Update x using projected linesearch with initial step=1.
                     (x, qval, (lowerTrial,upperTrial)) = self.projected_linesearch(x, g, d, qval, active_set=(lower,upper), backtrack_only=True)
+
+                    # 4. (alternative) Just project x onto feasible space to prevent repeated adding 
+                    # and removing the same constraints multiple times in the CG algorithm
+                    # x = self.project(x + d)
+                    # qval = qp.obj(x)
+                    # lowerTrial, upperTrial = self.get_active_set(x)
 
                 self.log.debug('q after CG pass = %8.2g' % qval)
                 niter_cg_total += cg.niter
