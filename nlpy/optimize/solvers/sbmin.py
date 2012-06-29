@@ -266,6 +266,9 @@ class SBMINFramework:
                     self.f = nlp.obj(self.x)
                     self.g = nlp.grad(self.x)
 
+                if self.save_lg:
+                    self.lg = nlp.lgrad(self.x)
+
                 self.pgnorm = np.max(np.abs( \
                                         self.projected_gradient(self.x,self.g)))
                 step_status = 'Acc'
@@ -324,6 +327,9 @@ class SBMINFramework:
                             self.true_step += m_step
                             self.f = nlp.obj(self.x)
                             self.g = nlp.grad(self.x)
+
+                        if self.save_lg:
+                            self.lg = nlp.lgrad(self.x)
 
                         self.pgnorm = np.max(np.abs( \
                                             self.projected_gradient(self.x,self.g)))
