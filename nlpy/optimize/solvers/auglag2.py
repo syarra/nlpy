@@ -246,7 +246,7 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangian.__init__(self, nlp, **kwargs)
-        self.Hessapp = LBFGS(self.n, npairs=5, **kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',5), **kwargs)
 
 
     def hprod(self, x, z, v, **kwargs):
@@ -305,7 +305,7 @@ class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangian.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1(self.n, npairs=5, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',5), **kwargs)
 
 
 # end class
