@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import with_statement # Required in 2.5
 from nlpy import __version__
 from nlpy.model import MFAmplModel
 from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINLqnFramework
@@ -11,6 +12,24 @@ from optparse import OptionParser
 import numpy
 import nlpy.tools.logs
 import sys, logging, os
+import threading
+import subprocess
+import signal
+from contextlib import contextmanager
+
+class TimeoutException(Exception): pass
+
+@contextmanager
+def time_limit(seconds):
+    def signal_handler(signum, frame):
+        raise TimeoutException, "Timed out!"
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
 
 
 def pass_to_auglag(nlp, **kwargs):
@@ -32,8 +51,15 @@ def pass_to_auglag(nlp, **kwargs):
 
     t_setup = cputime() - t    # Setup time.
 
-
-    auglag.solve(**kwargs)
+    try:
+        with time_limit(kwargs['maxtime']):
+            auglag.solve(**kwargs)
+    except TimeoutException, msg:
+        print "Timed out!"
+        auglag.status=5
+        auglag.tsolve=0
+        auglag.cons_max=0
+        auglag.pi_max=0
 
     return (t_setup, auglag)
 
@@ -62,7 +88,9 @@ parser.add_option("-q", "--quasi_newton", action="store", type="string",
                   help="Use quasi-newton approximation of Hessian \
                         (None, LBFGS, LSR1)")
 parser.add_option("-i", "--iter", action="store", type="int", default=None,
-                  dest="maxit",  help="Specify maximum number of iterations")
+                  dest="maxiter",  help="Specify maximum number of iterations")
+parser.add_option("-t", "--time", action="store", type="int", default=1000,
+                  dest="maxtime",  help="Specify maximum number of computation time")
 parser.add_option("-p", "--print_level", action="store", type="int",
                   default=0, dest="print_level",
                   help="Print iterations detail (0, 1 or 2)")
@@ -74,8 +102,8 @@ parser.add_option("-o", "--output_file", action="store", type="string",
 
 # Translate options to input arguments.
 opts = {}
-if options.maxit is not None:
-    opts['maxit'] = options.maxit
+if options.maxiter is not None:
+    opts['maxiter'] = options.maxiter
 if options.magic_steps is not None:
     if options.magic_steps == 'agg':
         opts['magic_steps_agg'] = True
@@ -86,6 +114,7 @@ opts['least_squares_pi'] = options.least_squares_pi
 opts['quasi_newton'] = options.quasi_newton
 opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
+opts['maxtime'] = options.maxtime
 
  # Create root logger.
 log = logging.getLogger('auglag2')
@@ -108,25 +137,25 @@ error = False
 
 if multiple_problems:
     # Define formats for output table.
-    hdrfmt = '%-10s %5s %5s %5s %15s %6s %5s'
+    hdrfmt = '%-10s %5s %5s %5s %15s %8s %8s %8s %6s %8s'
 
-    hdr = hdrfmt % ('Name','n','m','Iter','Objective','Solve','Opt')
+    hdr = hdrfmt % ('Name','n','m','Iter','Objective', '||c||', '||pi||', '#J.Tv', 'Time', 'Exit code')
     lhdr = len(hdr)
-    fmt = '%-10s %5d %5d %5d %15.8e %5s %6.2f'
+    fmt = '%-10s %5d %5d %5d %15.8e %6.2e %6.2e %8d %6.2f %8d'
     log.info(hdr)
     log.info('-' * lhdr)
 else:
     # Configure auglag logger.
     if options.print_level >= 1:
         auglaglogger = logging.getLogger('nlpy.auglag')
-        auglaglogger.setLevel(logging.DEBUG)
+        auglaglogger.setLevel(logging.INFO)
         auglaglogger.addHandler(hndlr)
         auglaglogger.propagate = False
 
     # Configure sbmin logger.
     if options.print_level >= 2:
         sbminlogger = logging.getLogger('nlpy.sbmin')
-        sbminlogger.setLevel(logging.DEBUG)
+        sbminlogger.setLevel(logging.INFO)
         sbminlogger.addHandler(hndlr)
         sbminlogger.propagate = False
 
@@ -157,8 +186,14 @@ for ProblemName in args:
     t_setup, auglag = pass_to_auglag(nlp, **opts)
     total_time = cputime() - t
     if multiple_problems:
+        if nlp.m == 0:
+            auglag.cons_max = auglag.pi_max = 0
+
         log.info(fmt % (ProblemName, nlp.n, nlp.m, auglag.niter_total, auglag.f,
-                        repr(auglag.status), total_time))
+                        auglag.cons_max, auglag.pi_max,
+                        auglag.alprob.nlp.nlp.Hprod,
+                        total_time, auglag.status))
+
     nlp.close()  # Close model.
 
 if not multiple_problems and not error:
@@ -177,4 +212,5 @@ if not multiple_problems and not error:
     log.info('  Number of Hessian matvecs    : %-d' % auglag.alprob.nlp.nlp.Hprod)
     log.info('  Setup/Solve time             : %-gs/%-gs' % (t_setup, auglag.tsolve))
     log.info('  Total time                   : %-gs' % (total_time))
+    log.info('  Status                       : %-gs' % auglag.status)
     log.info('--------------------------------')
