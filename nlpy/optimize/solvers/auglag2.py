@@ -307,10 +307,52 @@ class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
 
 
 class AugmentedLagrangianFramework(object):
-    '''
+    """
     Solve an NLP using the augmented Lagrangian method. This class is
     based on the successful Fortran code LANCELOT, but provides a more
     flexible implementation, along with some new features.
+
+
+    `AUGLAG = AugmentedLagrangianFramework(nlp, InnerSolver)`
+
+    :parameters:
+
+        :nlp:   a :class:`NLPModel` object representing the problem. For
+                instance, nlp may arise from an AMPL model
+        :InnerSolver:   a  solver for solving the inner iteration subproblem
+
+    :keywords:
+
+        :x0:           starting point                    (default nlp.x0)
+        :reltol:       relative stopping tolerance       (default `nlp.stop_d`)
+        :abstol:       absolute stopping tolerance       (default 1.0e-6)
+        :maxiter:      maximum number of iterations      (default max(1000,10n))
+        :ny:           apply Nocedal/Yuan linesearch     (default False)
+        :nbk:          max number of backtracking steps in Nocedal/Yuan
+                       linesearch                        (default 5)
+        :monotone:     use monotone descent strategy     (default False)
+        :nIterNonMono: number of iterations for which non-strict descent can
+                       be tolerated if monotone=False    (default 25)
+        :logger_name:  name of a logger object that can be used in the post
+                       iteration                         (default None)
+        :verbose:      print log if True                 (default True)
+
+    Once a `AugmentedLagrangianFramework` object has been instantiated and the
+    problem is set up, solve problem by issuing a call to `AUGLAG.solve()`.
+    The algorithm stops as soon as the infinity norm of the projected gradient
+    of the Lagrangian falls below
+
+        ``max(abstol, reltol * pg0)``
+
+    where ``g0`` is the infinity norm of the projected gradient of the Lagrangian
+    at the initial point.
+
+    :exit codes:
+        :0:    Optimal solution found
+        :1:    Problem is infeasible
+        :2:    Maximum iteration reached
+        :3:    Not making any more progress
+
 
     References
     ----------
@@ -320,15 +362,15 @@ class AugmentedLagrangianFramework(object):
 
     [NoW06] J. Nocedal and S. J. Wright, *Numerical Optimization*, 2nd Edition
             Springer, 2006, pp 519--523
-    '''
+    """
 
     def __init__(self, nlp, innerSolver, **kwargs):
 
-        '''
+        """
         Initialize augmented Lagrangian method and options.
         Any options that are not used here are passed on into the bound-
         constrained solver.
-        '''
+        """
 
         self.alprob = AugmentedLagrangian(nlp,**kwargs)
         self.x = kwargs.get('x0', self.alprob.x0.copy())
@@ -358,6 +400,7 @@ class AugmentedLagrangianFramework(object):
         # Maximum number of outer iterations 
         # (use 'maxiter' or 'maxinner' keyword for TR)
         self.maxouter = kwargs.get('maxouter', 10*self.alprob.nlp.original_n)
+        self.maxiter = kwargs.get('maxiter', 3000)
 
         self.inner_fail_count = 0
         self.status = None
@@ -380,10 +423,10 @@ class AugmentedLagrangianFramework(object):
 
     def UpdateMultipliers(self, convals, status):
 
-        '''
+        """
         Infeasibility is sufficiently small; update multipliers and
         tighten feasibility and optimality tolerances
-        '''
+        """
 
         if self.least_squares_pi:
             self.alprob.lsqr_multipliers(self.x)
@@ -392,7 +435,7 @@ class AugmentedLagrangianFramework(object):
         if self.alprob.nlp.m != 0:
             self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
-        if status == 'opt':
+        if status == 0:
             # Safeguard: tighten tolerances only if desired optimality
             # is reached to prevent rapid decay of the tolerances from failed
             # inner loops
@@ -491,7 +534,8 @@ class AugmentedLagrangianFramework(object):
                                              self.pg0, '', max_cons,
                                              '', self.alprob.rho,''))
 
-        while not converged and self.iter < self.maxouter:
+        while not converged and self.iter < self.maxouter \
+                            and self.niter_total < self.maxiter:
 
             self.iter += 1
             #print '1:', self.alprob.obj(self.x)
@@ -552,8 +596,8 @@ class AugmentedLagrangianFramework(object):
 
                 # If optimality of the inner loop is not achieved within 10
                 # major iterations, exit immediately
-                if self.inner_fail_count == 10:
-                    self.status = 'Stall'
+                if self.inner_fail_count == 100:
+                    self.status = 3
                     self.log.debug('Current point could not be improved, exiting ... \n')
                     break
 
@@ -571,7 +615,7 @@ class AugmentedLagrangianFramework(object):
                     infeas_iter = 0
 
                 if infeas_iter == 10:
-                    self.status = 'Infeas'
+                    self.status = 1
                     self.log.debug('Problem appears to be infeasible, exiting ... \n')
                     break
 
@@ -592,20 +636,26 @@ class AugmentedLagrangianFramework(object):
         # end while
 
         self.tsolve = cputime() - t    # Solve time
+        if self.alprob.nlp.m != 0:
+            self.pi_max = np.max(np.abs(self.alprob.pi))
+            self.cons_max = np.max(np.abs(self.alprob.nlp.cons(self.x)))
+        else:
+            self.pi_max = None
+            self.cons_max = None
+
 
         # Solution output, etc.
         if converged:
-            self.status = 'Opt'
+            self.status = 0
             self.log.debug('Optimal solution found \n')
         elif not converged and self.status is None:
-            self.status = 'Iter'
+            self.status = 2
             self.log.debug('Maximum number of iterations reached \n')
 
         self.log.info('f = %12.8g' % self.f)
         if self.alprob.nlp.m != 0:
             self.log.info('pi_max = %12.8g' % np.max(self.alprob.pi))
             self.log.info('max infeas. = %12.8g' % max_cons_new)
-
     # end def
 
 # end class
