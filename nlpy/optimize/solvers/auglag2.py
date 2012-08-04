@@ -176,6 +176,7 @@ class AugmentedLagrangian(NLPModel):
         nlp = self.nlp
         m = nlp.m
         n = nlp.n
+        full_mult = kwargs.get('full_mult',False)
 
         lim = max(2*m,2*n)
         J = nlp.jac(x)
@@ -186,13 +187,19 @@ class AugmentedLagrangian(NLPModel):
         Jred = ReducedLinearOperator(J, np.arange(m, dtype=np.int), 
             not_on_bound)
 
-        g = nlp.grad(x)
+        if full_mult:
+            g = nlp.grad(x)
+        else:
+            g = self.lgrad(x)
 
         # Call LSQR method
         lsqr = LSQRFramework(Jred.T)
         lsqr.solve(g[not_on_bound], itnlim=lim)
         if lsqr.optimal:
-            self.pi = lsqr.x.copy()
+            if full_mult:
+                self.pi = lsqr.x.copy()
+            else:
+                self.pi += lsqr.x
 
         return
 
@@ -240,7 +247,7 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangian.__init__(self, nlp, **kwargs)
-        self.Hessapp = LBFGS(self.n, npairs=5, **kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',5), **kwargs)
 
 
     def hprod(self, x, z, v, **kwargs):
@@ -299,7 +306,7 @@ class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangian.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1(self.n, npairs=5, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',5), **kwargs)
 
 
 # end class
@@ -482,7 +489,7 @@ class AugmentedLagrangianFramework(object):
 
         # Use a least-squares estimate of the multipliers to start (if requested)
         if self.least_squares_pi:
-            self.alprob.lsqr_multipliers(self.x)
+            self.alprob.lsqr_multipliers(self.x, full_mult=True)
             self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
         # First function and gradient evaluation

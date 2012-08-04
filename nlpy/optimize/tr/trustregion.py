@@ -7,7 +7,7 @@ from nlpy.krylov.ppcg import ProjectedCG
 import numpy as np
 from math import sqrt
 import nlpy.tools.norms as norms
-from nlpy.optimize.solvers.bqp2 import BQP
+from nlpy.optimize.solvers.bqp2 import BQP, BQP_new
 
 __docformat__ = 'restructuredtext'
 
@@ -58,8 +58,8 @@ class TrustRegionFramework:
         Compute the ratio of actual versus predicted reduction
         rho = (f - f_trial)/(-m)
         """
-        pred = -m + max(1.0, abs(f)) * 10.0 * self.eps
-        ared = f - f_trial + max(1.0, abs(f)) * 10.0 * self.eps
+        pred = -m + np.max(1.0, np.abs(f)) * 10.0 * self.eps
+        ared = f - f_trial + np.max(1.0, np.abs(f)) * 10.0 * self.eps
         if pred > 0 or not check_positive:
             return ared/pred
         else:
@@ -252,7 +252,8 @@ class TrustRegionBQP(TrustRegionSolver):
 
         TrustRegionSolver.__init__(self, g,  **kwargs)
 
-        self.bqpSolver = BQP(bqp, **kwargs)
+        # self.bqpSolver = BQP(bqp, **kwargs)
+        self.bqpSolver = BQP_new(bqp, **kwargs)
 
         self.niter = 0
         self.stepNorm = 0.0
