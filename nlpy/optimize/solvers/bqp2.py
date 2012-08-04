@@ -21,7 +21,7 @@ import numpy as np
 import logging
 import warnings
 
-import pdb
+import ipdb
 
 __docformat__ = 'restructuredtext'
 
@@ -50,15 +50,26 @@ class SufficientDecreaseCG(TruncatedCG):
                     at the iterate xk.
 
     See the documentation of TruncatedCG for more information.
+
+    Exit when either :
+        - norm of gradient is less than eps_g times the initial gardient
+          added in case whe have non stricly convex or non bounded problem
+        - stalling process
+          sufficient if the problem is convex and bounded
+        - sufficient decrease
     """
     def __init__(self, g, H, **kwargs):
         TruncatedCG.__init__(self, g, H, **kwargs)
         self.name = 'Suff-CG'
-        self.qval = 0.0   # Initial value of quadratic objective.
+        self.qOld = 0.0   # Initial value of quadratic objective.
         self.best_decrease = 0
+        self.decrease_old = 0
         self.cg_reltol = kwargs.get('cg_reltol', 0.1)
         self.detect_stalling = kwargs.get('detect_stalling', True)
-
+        self.Lvar = kwargs.get('Lvar', None)
+        self.Uvar = kwargs.get('Uvar', None)
+        self.x = kwargs.get('x', None)
+        self.g0 = np.linalg.norm(g)
 
     def post_iteration(self):
         """
@@ -66,17 +77,41 @@ class SufficientDecreaseCG(TruncatedCG):
         costs one dot product, five products between scalars and two
         additions of scalars.
         """
-        if not self.detect_stalling: return None
         p = self.p ; g = self.g ; pHp = self.pHp ; alpha = self.alpha
-        qOld = self.qval
-        qCur = qOld + alpha * np.dot(g,p) + 0.5 * alpha*alpha * pHp
-        decrease = qOld - qCur
-        if decrease <= self.cg_reltol * self.best_decrease:
-            raise UserExitRequest
-        else:
-            self.best_decrease = max(self.best_decrease, decrease)
-        return None
+        s = self.step
+        qCur = self.qval
+        decrease = self.qOld - qCur
+        Dqnorm = np.linalg.norm(g+self.H*(self.x+s))
+        self.log.debug('qCur : %g' % qCur)
 
+        projected_xps = np.minimum(self.Uvar, np.maximum(self.Lvar, self.x+s)) 
+
+        if not identical(self.x+s,projected_xps):
+            self.log.debug('CG stops with a constraint violation')
+            raise UserExitRequest
+
+        if Dqnorm <= 1e-7*self.g0:
+            self.log.debug('CG stops with a sufficient decrease in the gradient norm')
+            raise UserExitRequest
+
+        if self.qval <= -1e+25:
+            raise UserExitRequest
+
+        #print 'old decrease:', self.decrease_old
+        if self.iter != 1:
+            if decrease >= 100*self.decrease_old:
+                self.log.debug('CG stops with a sufficient decrease in the objective value')
+                raise UserExitRequest
+
+        self.decrease_old = decrease
+
+        if self.detect_stalling:
+            if decrease <= self.cg_reltol * self.best_decrease:
+                self.log.debug('CG stops with a stalling status')
+                raise UserExitRequest
+            else:
+                self.best_decrease = max(self.best_decrease, decrease)
+        return None
 
 
 class BQP(object):
@@ -192,25 +227,57 @@ class BQP(object):
         d is the search direction, qval is q(x) and
         step is the initial steplength.
         """
-        # TODO: Does it help to replace this with Bertsekas' modified
-        #       Armijo condition?
 
         qp = self.qp
         finished = False
 
-        # Perform projected Armijo linesearch.
-        while not finished and step >= 1e-21:
+        s = self.project(x + step * d) - x
+        qTrial = qp.obj(x+s)
+        slope = np.dot(g, s) 
 
+        projected_xps = np.minimum(self.Uvar, np.maximum(self.Lvar, x+s)) 
+        if not identical(x+s,projected_xps):
+            interp = True
+        else:
+            interp = (qTrial - qval >= self.armijo_factor * slope)
+
+        self.log.debug('qTrial0: %6.3e' % qTrial)
+        if interp:
+            # Perform projected Armijo linesearch in order to reduce the step
+            # until a successful step is found
+            search = True
+            while search and step >= 1e-30:
+                step /= 10
+                s = self.project(x + step * d) - x
+                projected_xps = np.minimum(self.Uvar, np.maximum(self.Lvar, x+s))
+                if identical(x+s,projected_xps):
+                    qTrial = qp.obj(x+s)
+                    self.log.debug('qTrial interp: %6.3e' % qTrial)
+                    slope = np.dot(g, s)
+                    search = (qTrial - qval >= self.armijo_factor * slope)
+            xTrial = x+s
+            self.log.debug('\n')
+        else:
+            search = True
+            steps = step
+            while search and step <= 1e+30:
+                step *= 10
+                s = self.project(x + step * d) - x
+                projected_xps = np.minimum(self.Uvar, np.maximum(self.Lvar, x+s))
+                if identical(x+s,projected_xps):
+                    qTrial = qp.obj(x+s)
+                    self.log.debug('qTrial extrap: %6.3e'% qTrial)
+                    slope = np.dot(g, s)
+                    if qTrial - qval <= self.armijo_factor * slope:
+                        search = True
+                        steps = step
+                else:
+                    search = False
+            step = steps
             xTrial = self.project(x + step * d)
             qTrial = qp.obj(xTrial)
-            slope = np.dot(g, xTrial-x)
-
-            if qTrial <= qval + self.armijo_factor * slope:
-                finished = True
-            else:
-                step /= 3
-
-        return (xTrial, qTrial)
+            self.log.debug('qTrial extrap best: %6.3e \n' % qTrial)
+        return (xTrial,qTrial)
 
 
     def projected_gradient(self, x0, g=None, active_set=None, qval=None, **kwargs):
@@ -332,7 +399,7 @@ class BQP(object):
         pg = self.pgrad(x, g=g, active_set=(lower,upper))
         pgNorm = np.linalg.norm(pg)
 
-        stoptol = self.stoptol*pgNorm + 1e-5
+        stoptol = self.stoptol*pgNorm #+ 1e-5
         self.log.debug('Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm))
 
         exitOptimal = exitIter = False
@@ -377,8 +444,7 @@ class BQP(object):
 
             ZHZ = ReducedHessian(self.H, free_vars)
             Zg  = g[free_vars]
-
-            cg = SufficientDecreaseCG(Zg, ZHZ)
+            cg = SufficientDecreaseCG(Zg, ZHZ, x=x[free_vars], Lvar=qp.Lvar[free_vars], Uvar=qp.Uvar[free_vars], detect_stalling=True)
             try:
                 cg.Solve()
             except UserExitRequest:
@@ -389,8 +455,6 @@ class BQP(object):
             # At this point, CG returned from a clean user exit or
             # because its original stopping test was triggered.
             self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
-            #if cg.status == 'residual small':
-            #    self.log.debug('CG residual = %g, pHp = %g' % (cg.ry**0.5,cg.pHp))
 
             # 3. Expand search direction.
             d = np.zeros(n)
@@ -399,7 +463,6 @@ class BQP(object):
             if cg.infDescent and cg.step.size != 0 and cg.dir.size !=0:
                 self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
 
-                # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
                 nc_dir = np.zeros(n)
                 nc_dir[free_vars] = cg.dir
                 (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
@@ -428,9 +491,14 @@ class BQP(object):
                 # This currently incurs a little bit of extra work
                 # by instantiating a new CG object.
                 self.log.debug('Active set and binding set match. Continuing CG.')
+
+                fixed_vars   = np.concatenate((lower,upper))
+                free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
+                ZHZ = ReducedHessian(self.H, free_vars)
+                Zg  = g[free_vars]
                 s0 = cg.step[:]
-                cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=False)
-                cg.Solve(s0=s0)
+                cg = SufficientDecreaseCG(Zg, ZHZ,  x=x[free_vars], Lvar=qp.Lvar[free_vars], Uvar=qp.Uvar[free_vars], detect_stalling=False, second_round=True)
+                cg.Solve()
 
                 self.log.debug('CG stops after %d its with status=%s.' % (cg.niter,cg.status))
                 d = np.zeros(n)
@@ -438,7 +506,7 @@ class BQP(object):
 
                 if cg.infDescent and cg.step.size != 0:
                     self.log.debug('iter :%d  Negative curvature detected (%d its)' % (iter,cg.niter))
-                    # (x, (lower,upper)) = self.to_boundary(x,d,free_vars)
+
                     nc_dir = np.zeros(n)
                     nc_dir[free_vars] = cg.dir
                     (x, (lower,upper)) = self.to_boundary(x,nc_dir,free_vars)
