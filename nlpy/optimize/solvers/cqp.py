@@ -473,6 +473,12 @@ class RegQPInteriorPointSolver(object):
                 mu0 = mu
 
             else:
+                #regdu = min(regdu/10, sz/normdy/10, (sz/normdy)**(1.1))
+                regdu = min(regdu/10, sz**(1.1))
+                regdu = max(regdu, regdu_min)
+                #regpr = min(regpr/10, sz/normdx/10, (sz/normdx)**(1.1))
+                regpr = min(regpr/10, sz**(1.1))
+                regpr = max(regpr, regpr_min)
 
                 if regdu > 0:
                     regdu = regdu/10

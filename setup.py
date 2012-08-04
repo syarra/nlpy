@@ -115,7 +115,7 @@ def setup_package():
             maintainer_email = "dominique.orban@gerad.ca",
             description = DOCLINES[0],
             long_description = "\n".join(DOCLINES[2:]),
-            url = "http://nlpy.sf.net",
+            url = "http://nlpy.sourceforge.net",
             download_url = "https://github.com/dpo/nlpy",
             license = 'LGPL',
             packages = packages,

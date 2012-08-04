@@ -416,10 +416,19 @@ class RegLPInteriorPointSolver:
             else:
                 # Adjust regularization parameters.
                 if regdu > 0:
+<<<<<<< HEAD
                     regdu = regdu/10
                     regdu = max(regdu, regdu_min)
                 if regpr > 0:
                     regpr = regpr/10
+=======
+                    #regdu = min(regdu/10, sz/normdy/10, (sz/normdy)**(1.1))
+                    regdu = min(regdu/10, sz**(1.1))
+                    regdu = max(regdu, regdu_min)
+                if regpr > 0:
+                    #regpr = min(regpr/10, sz/normdx/10, (sz/normdx)**(1.1))
+                    regpr = min(regpr/10, sz**(1.1))
+>>>>>>> upstream/optpkg
                     regpr = max(regpr, regpr_min)
 
                 # Check for infeasible problem.
@@ -498,13 +507,6 @@ class RegLPInteriorPointSolver:
                         H.put(-z/s - regpr, range(on,n))
                         if regdu > 0: H.put(regdu,        range(n,n+m))
 
-                    #if iter == 5:
-                    #    # Export current matrix to file for futher inspection.
-                    #    import os
-                    #    name = os.path.basename(self.lp.name)
-                    #    fname = '.'.join(name.split('.')[:-1]) + '.mtx'
-                    #    H.exportMmf(fname)
-
                     self.LBL.factorize(H)
                     factorized = True
 
@@ -521,7 +523,7 @@ class RegLPInteriorPointSolver:
                             nb_bump = 5
                             continue
                         else:
-                            sys.stderr.write('... bumping up reg parameters\n')
+                            sys.stderr.write('... bumping up reg parameters (%d)\n' % nb_bump)
                         regpr *= 10 ; regdu *= 10
                         nb_bump += 1
                         factorized = False
@@ -530,8 +532,18 @@ class RegLPInteriorPointSolver:
                 if not self.LBL.isFullRank and nb_bump >= 5:
                     status = 'Unable to regularize sufficiently.'
                     short_status = 'degn'
-                    finished = True
-                    continue  # Does this get us out of the outer while?
+                    step_acceptable = True
+                    continue
+
+                # Dump current matrix to file.
+                #if iter == 4:
+                #    _A = -H[:n,:n]
+                #    _A.exportMmf('A.mtx')
+                #    _BT = H[n:,:n]
+                #    _BT.exportMmf('B.mtx')
+                #    _C = H[n:,n:]
+                #    _C.exportMmf('C.mtx')
+                #    np.savetxt('rhs.txt', rhs, fmt='%25.15e')
 
                 # Compute duality measure.
                 mu = sz/ns
@@ -610,6 +622,10 @@ class RegLPInteriorPointSolver:
                 step_acceptable = True  # Must get rid of this
 
             # End while not step_acceptable
+
+            if not self.LBL.isFullRank and nb_bump >= 5:
+                finished = True
+                continue
 
             # Recover step in z.
             dz = -(comp + z*ds)/s

@@ -15,7 +15,11 @@ implemented is that of More and Toraldo described in
 from nlpy.krylov.pcg   import TruncatedCG
 from nlpy.krylov.linop import SimpleLinearOperator
 from nlpy.krylov.linop import SymmetricallyReducedLinearOperator as ReducedHessian
+<<<<<<< HEAD
 from nlpy.tools.utils import identical, where
+=======
+from nlpy.tools import identical, where
+>>>>>>> upstream/optpkg
 from nlpy.tools.exceptions import InfeasibleError, UserExitRequest
 import numpy as np
 import logging
