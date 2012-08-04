@@ -12,12 +12,11 @@ truncated preconditioned conjugate gradient algorithm as described in
 from nlpy.tools.exceptions import UserExitRequest
 from nlpy.tools.utils import NullHandler
 import numpy as np
-import logging, pdb
+import logging, ipdb
 from math import sqrt
 import sys
 
 __docformat__ = 'restructuredtext'
-
 
 class TruncatedCG:
 
@@ -82,10 +81,6 @@ class TruncatedCG:
         return
 
 
-    # def _write( self, msg ):
-    #     sys.stderr.write(self.prefix + msg)
-
-
     def to_boundary(self, s, p, radius, ss=None):
         """
         Given vectors `s` and `p` and a trust-region radius `radius` > 0,
@@ -129,7 +124,7 @@ class TruncatedCG:
         radius  = kwargs.get('radius', None)
         abstol  = kwargs.get('absol', 1.0e-8)
         reltol  = kwargs.get('reltol', 1.0e-6)
-        maxiter = kwargs.get('maxiter', 2*self.n)
+        maxiter = kwargs.get('maxiter', 50*self.n)
         prec    = kwargs.get('prec', lambda v: v)
         # debug   = kwargs.get('debug', False)
 
@@ -146,7 +141,6 @@ class TruncatedCG:
         else:
             s = np.zeros(n)
             snorm2 = 0.0
-
         y = prec(r)
         ry = np.dot(r, y)
 
@@ -172,10 +166,9 @@ class TruncatedCG:
         infDescent = False
 
         # if debug:
-        self.log.debug('-' * len(self.header))
-        self.log.debug(self.header)
-        self.log.debug('-' * len(self.header))
-
+        self.log.info('-' * len(self.header))
+        self.log.info(self.header)
+        self.log.info('-' * len(self.header))
         #while sqrtry > stopTol and k < maxiter and \
         while not (exitOptimal or exitIter or exitUser) and \
                 not onBoundary and not infDescent:
@@ -185,7 +178,7 @@ class TruncatedCG:
             pHp = np.dot(p, Hp)
 
             # if debug:
-            self.log.debug(self.fmt % (k, ry, pHp))
+            self.log.info(self.fmt % (k, ry, pHp))
 
             # Compute steplength to the boundary.
             if radius is not None:
@@ -253,6 +246,8 @@ class TruncatedCG:
             self.beta = beta
             self.ry = ry
             self.alpha = alpha
+            self.qval = model_value(H,g,s)
+            self.iter = k
 
             try:
                 self.post_iteration()
@@ -265,9 +260,9 @@ class TruncatedCG:
 
         # Output info about the last iteration.
         # if debug:
-        self.log.debug(self.fmt % (k, ry, pHp))
-
-        if k < maxiter and not onBoundary and not infDescent:
+        self.log.info(self.fmt % (k, ry, pHp))
+        self.log.debug('qval: %6.2e' % model_value(H,g,s))
+        if k < maxiter and not onBoundary and not infDescent and not exitUser:
             self.status = 'residual small'
         elif k >= maxiter:
             self.status = 'max iter'
