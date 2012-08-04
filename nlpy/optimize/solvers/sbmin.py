@@ -96,7 +96,7 @@ class SBMINFramework:
 
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.abstol  = kwargs.get('abstol', 1.0e-7)
-        self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
+        self.maxiter = kwargs.get('maxiter', 2*self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
 
