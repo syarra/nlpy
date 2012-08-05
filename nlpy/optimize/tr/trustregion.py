@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Class definition for Trust-Region Algorithm
 """
@@ -230,17 +231,17 @@ class TrustRegionBQP(TrustRegionSolver):
 
     The trust-region subproblem has the form
 
-    minimize q(d)  subject to ||d||_oo <= radius,
+    minimize   q(d)
+    subject to ||d||_∞ <= ∆,
 
     where q(d) is a quadratic function of the n-vector d, i.e., q has the
-    general form q(d) = g' d + 1/2 d' H d,
+    general form q(d) = g'd + 1/2 d'Hd,
 
     where `g` is a n-vector typically interpreted as the gradient of some
     merit function and `H` is a real symmetric n-by-n matrix. Note that `H`
     need not be positive semi-definite.
 
-    The trust-region constraint `||d||_oo <= radius` has to be in infinity norm
-    only.
+    The norm used in the trust-region constraint is the infinity norm.
 
     For more information on trust-region methods, see
 
@@ -251,9 +252,7 @@ class TrustRegionBQP(TrustRegionSolver):
     def __init__(self, bqp, g, **kwargs):
 
         TrustRegionSolver.__init__(self, g,  **kwargs)
-
         self.bqpSolver = BQP(bqp, **kwargs)
-
         self.niter = 0
         self.stepNorm = 0.0
         self.step = None
@@ -270,7 +269,6 @@ class TrustRegionBQP(TrustRegionSolver):
         self.step= self.bqpSolver.x
         self.m = self.bqpSolver.qval
         return
-
 
 
 # Define GLTR solver only if available
