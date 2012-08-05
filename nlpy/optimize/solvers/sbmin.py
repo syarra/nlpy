@@ -1,11 +1,12 @@
+# -*- coding: utf-8 -*-
 """
- SBMIN
- Trust-Region Method for box constrained Programming.
+SBMIN
+A Trust-Region Method for Bound-Constrained Optimization.
 """
 
 from nlpy.optimize.solvers import lbfgs    # For Hessian Approximate
 from nlpy.krylov.linop import SimpleLinearOperator
-from nlpy.tools import norms
+from nlpy.tools.norms import norm_infty
 from nlpy.tools.timing import cputime
 from nlpy.tools.exceptions import UserExitRequest
 import numpy as np
@@ -25,12 +26,19 @@ def FormEntireMatrix(on,om,Jop):
         J[:,i] = Jop * v
     return J
 
-class SBMINFramework:
+class SBMINFramework(object):
     """
-    An abstract framework for a trust-region-based algorithm for nonlinear
-    box constrained programming. Instantiate using
+    An abstract framework for a trust-region-based algorithm for the nonlinear
+    bound-constrained optimization problem
 
-    `SBMIN = SBMINFramework(nlp, TR, TrSolver)`
+        minimize    f(x)
+        subject to  l <= x <= u
+
+    where some components of l and/or u may be infinite.
+
+    Instantiate using
+
+        `SBMIN = SBMINFramework(nlp, TR, TrSolver)`
 
     :parameters:
 
@@ -66,10 +74,8 @@ class SBMINFramework:
         self.x0      = kwargs.get('x0', self.nlp.x0.copy())
         self.x = None
         self.f      = None
-        self.f0     = kwargs.get('f0',None)
-        self.g      = None
-        self.g_old  = kwargs.get('g0',None)
-        self.save_g = False              # For methods that need g_{k-1} and g_k
+        self.f0     = kwargs.get('f0', None)
+        self.g      = kwargs.get('g0', None)
         self.pgnorm  = None
         self.tsolve = 0.0
         self.true_step = None
@@ -91,18 +97,19 @@ class SBMINFramework:
         self.monotone = kwargs.get('monotone', True)
         self.nIterNonMono = kwargs.get('nIterNonMono', 25)
 
+        self.abstol  = kwargs.get('abstol', 1.0e-8)
         self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
 
-        self.hformat = '%-5s  %8s  %7s  %5s  %8s  %8s  %4s'
+        self.hformat = '%-5s  %9s  %7s  %5s  %8s  %8s  %4s'
         self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','bqp',
                                        'rho','Radius','Stat')
         self.hlen   = len(self.header)
         self.hline  = '     '+'-' * self.hlen
-        self.format = '     %-5d  %8.2e  %7.1e  %5d  %8.1e  %8.1e  %4s'
-        self.format0= '     %-5d  %8.2e  %7.1e  %5s  %8s  %8s  %4s'
+        self.format = '     %-5d  %9.2e  %7.1e  %5d  %8.1e  %8.1e  %4s'
+        self.format0= '     %-5d  %9.2e  %7.1e  %5s  %8s  %8s  %4s'
         self.radii = None
 
         # Setup the logger. Install a NullHandler if no output needed.
@@ -119,6 +126,9 @@ class SBMINFramework:
         """
         return self.nlp.hprod(self.x, self.nlp.pi0, v)
 
+    def project(self, x):
+        "Project x into the bounds."
+        return np.maximum(np.minimum(x, self.nlp.Uvar), self.nlp.Lvar)
 
     def projected_gradient(self, x, g):
         """
@@ -126,11 +136,11 @@ class SBMINFramework:
 
                    l <= x <= u
         """
-        p = x - g
-        med = np.maximum(np.minimum(p,self.nlp.Uvar),self.nlp.Lvar)
-        q = x - med
-
-        return q
+        #p = x - g
+        #med = np.maximum(np.minimum(p,self.nlp.Uvar),self.nlp.Lvar)
+        #q = x - med
+        #return q
+        return x - self.project(x - g)
 
 
     def PostIteration(self, **kwargs):
@@ -146,17 +156,15 @@ class SBMINFramework:
         nlp = self.nlp
 
         # Gather initial information.
-        self.x = self.x0.copy()
+        self.x = self.project(self.x0)
         if self.f0 is None:
-            self.f0 = self.nlp.obj(self.x)
+            self.f0 = nlp.obj(self.x)
+        self.f = self.f0
 
-        if self.g_old is None:
-            self.g_old = self.nlp.grad(self.x)
+        if self.g is None:
+            self.g = nlp.grad(self.x)
 
-        self.f        = self.f0
-        self.g        = self.g_old
-        self.pgnorm = np.max(np.abs( \
-                                self.projected_gradient(self.x,self.g)))
+        self.pgnorm = norm_infty(self.projected_gradient(self.x,self.g))
         self.pg0 = self.pgnorm
 
         # Reset initial trust-region radius.
@@ -170,13 +178,12 @@ class SBMINFramework:
             l = 0
             sigRef = sigCan = 0
 
-        stoptol = self.reltol * self.pg0 + 1e-5
+        stoptol = self.reltol * self.pg0 + self.abstol
+        cgtol = 1.0
         step_status = None
         exitIter = exitUser = exitTR = False
         exitOptimal = self.pgnorm <= stoptol
         status = ''
-
-        t = cputime()
 
         # Print out header and initial log.
         self.log.info(self.hline)
@@ -186,22 +193,21 @@ class SBMINFramework:
                                              self.pgnorm, '', '',
                                              '', ''))
 
+        t = cputime()
+
         while not (exitUser or exitOptimal or exitIter or exitTR):
 
             self.iter += 1
 
-            # Save current gradient for quasi-Newton approximation
-            if self.save_g:
-                self.g_old = self.g.copy()
-
             # Iteratively minimize the quadratic model in the trust region
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
+            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, g_k=self.g)
 
-            qp = TrustBQPModel(nlp, self.x.copy(), self.TR.Delta, g_k=self.g)
+            cgtol = max(1.0e-6, min(0.5 * cgtol, sqrt(self.pgnorm)))
 
             self.solver = self.TrSolver(qp, qp.grad)
-            self.solver.Solve()
+            self.solver.Solve(reltol=cgtol)
 
             step = self.solver.step
             self.true_step = self.solver.step.copy()
@@ -212,10 +218,10 @@ class SBMINFramework:
             m = self.solver.m
 
             self.total_bqpiter += bqpiter
-            x_trial = self.x.copy() + step
+            x_trial = self.x + step
             f_trial = nlp.obj(x_trial)
 
-            # Aggressive magical steps 
+            # Aggressive magical steps
             # (i.e. the magical steps can influence the trust region size)
             if self.magic_steps_agg:
                 x_inter = x_trial.copy()
@@ -230,7 +236,7 @@ class SBMINFramework:
                     m = m - (f_inter - f_trial)
             #     self.log.debug('pred = %20.16g, pred increase = %20.16g' % (self.solver.m, f_inter - f_trial))
             # else:
-            #     self.log.debug('ared = %20.16f' % (self.f - f_trial))                
+            #     self.log.debug('ared = %20.16f' % (self.f - f_trial))
 
             rho  = self.TR.Rho(self.f, f_trial, m)
 
@@ -255,8 +261,7 @@ class SBMINFramework:
                     self.f = nlp.obj(self.x)
                     self.g = nlp.grad(self.x)
 
-                self.pgnorm = np.max(np.abs( \
-                                        self.projected_gradient(self.x,self.g)))
+                self.pgnorm = norm_infty(self.projected_gradient(self.x,self.g))
                 step_status = 'Acc'
 
                 # Update non-monotonicity parameters.
@@ -295,7 +300,7 @@ class SBMINFramework:
                         f_trial = nlp.obj(x_trial)
 
                     if f_trial >= self.f + 1.0e-4 * alpha * slope:
-                        # Backtrack failed to produce an improvement, 
+                        # Backtrack failed to produce an improvement,
                         # keep the current x, f, and g.
                         # (Monotone strategy)
                         step_status = 'N-Y Rej'
@@ -314,8 +319,7 @@ class SBMINFramework:
                             self.f = nlp.obj(self.x)
                             self.g = nlp.grad(self.x)
 
-                        self.pgnorm = np.max(np.abs( \
-                                            self.projected_gradient(self.x,self.g)))
+                        self.pgnorm = norm_infty(self.projected_gradient(self.x,self.g))
                         step_status = 'N-Y Acc'
 
                     # Update the TR radius regardless of backtracking success
@@ -365,91 +369,44 @@ class SBMINFramework:
         self.status = status
 
 
-
-class SBMINLqnFramework(SBMINFramework):
-    """
-    Class SBMINLbfgsFramework is a subclass of SBMINFramework. The method is
-    based on a trust-region-based algorithm for nonlinear box constrained
-    programming.
-    The only difference is that a limited-memory quasi-Newton Hessian 
-    approximation is used and maintained along the iterations. See class 
-    SBMINFramework for more information.
-    """
-
-    def __init__(self, nlp, TR, TrSolver, **kwargs):
-
-        SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
-        self.save_g = True
-
-
-    def PostIteration(self, **kwargs):
-        """
-        This method updates the limited-memory BFGS Hessian by appending
-        the most recent (s,y) pair to it and possibly discarding the oldest one
-        if all the memory has been used.
-        """
-        # LBFGS approximation should only update on *successful* iterations
-        if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
-            s = self.true_step
-            y = self.g - self.g_old
-            self.nlp.hupdate(s, y)
-
-
-
 class TrustBQPModel(NLPModel):
     """
     Class for defining a Model to pass to BQP solver:
-                min     m(x) = <g, x-x_k> + 1/2 < x-x_k, H*(x-x_k)>
-                s.t.       l <= x <= u
-                           || x - x_k ||_oo  <= delta
+                min     m(xk + s) = g's + 1/2 s'Hs
+                s.t.       l <= xk + s <= u
+                           || s ||_∞  <= delta
 
-    where `g` is the gradient evaluated at x_k
-    and `H` is  the Hessian evaluated at x_k.
+    where `g` is the gradient evaluated at xk
+    and `H` is  the Hessian evaluated at xk.
     """
 
-    def __init__(self, nlp, x_k, delta, **kwargs):
+    def __init__(self, nlp, xk, delta, **kwargs):
 
-        Delta = delta*np.ones(nlp.n)
-        Lvar = np.maximum(nlp.Lvar - x_k, -Delta)
-        Uvar = np.minimum(nlp.Uvar - x_k, Delta)
+        Lvar = np.maximum(nlp.Lvar - xk, -delta)
+        Uvar = np.minimum(nlp.Uvar - xk, delta)
 
         NLPModel.__init__(self, n=nlp.n, m=nlp.m, name='TrustRegionSubproblem',
-                          Lvar=Lvar ,Uvar =Uvar)
+                          Lvar=Lvar, Uvar=Uvar)
         self.nlp = nlp
         self.x0 = np.zeros(self.nlp.n)
-        self.x_k = x_k.copy()
+        self.xk = xk.copy()
         self.delta = delta
-        self.g_k = kwargs.get('g_k', None)
-        if self.g_k == None:
-            self.g_k = self.nlp.grad(self.x_k)
+        self.gk = kwargs.get('gk', None)
+        if self.gk == None:
+            self.gk = self.nlp.grad(self.xk)
 
     def obj(self, x, **kwargs):
-        """
-        Evaluate quadratic approximation of the Augmented Lagrangian for the
-        trust-region subproblem objective function at x:
-
-        < g , x > + .5 * x' * H * x
-
-        where `g` is the gradient of the Augmented Lagrangian evaluated at x_k
-        and `H` is  the Hessian of the Augmented Lagrangian evaluated at x_k.
-
-        """
-        Hx = self.nlp.hprod(self.x_k, None, x)
-
-        qapprox = np.dot(self.g_k.copy(), x)
+        Hx = self.nlp.hprod(self.xk, None, x)
+        qapprox = np.dot(self.gk, x)
         qapprox += .5 * np.dot(x, Hx)
 
         return qapprox
 
     def grad(self, x, **kwargs):
-        """
-        """
-        g = self.g_k.copy()
-        g += self.nlp.hprod(self.x_k, None, x)
+        g = self.gk.copy()
+        g += self.nlp.hprod(self.xk, None, x)
         return g
 
     def hprod(self, x, pi, p, **kwargs):
-        """
-        """
-        return self.nlp.hprod(self.x_k, None, p)
+        return self.nlp.hprod(self.xk, None, p)
 
