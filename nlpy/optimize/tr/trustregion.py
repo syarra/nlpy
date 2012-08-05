@@ -8,7 +8,7 @@ from nlpy.krylov.ppcg import ProjectedCG
 import numpy as np
 from math import sqrt
 import nlpy.tools.norms as norms
-from nlpy.optimize.solvers.bqp2 import BQP
+from nlpy.optimize.solvers.bqp2 import BQP, BQP_new
 
 __docformat__ = 'restructuredtext'
 

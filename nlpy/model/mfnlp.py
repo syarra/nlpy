@@ -49,7 +49,7 @@ class MFModel(NLPModel):
 
 
     def jac(self, x, **kwargs):
-        return SimpleLinearOperator(self.m, self.n, symmetric=False,
+        return SimpleLinearOperator(self.n, self.m, symmetric=False,
                          matvec=lambda u: self.jprod(x,u,**kwargs),
                          matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
 
@@ -144,6 +144,7 @@ class SlackNLP( MFModel ):
         self.hprod = nlp.hprod
         self.hiprod = self.hiprod
 
+        self.equalC = nlp.equalC ; self.nequalC = nlp.equalC
         self.lowerC = nlp.lowerC ; self.nlowerC = nlp.nlowerC
         self.upperC = nlp.upperC ; self.nupperC = nlp.nupperC
         self.rangeC = nlp.rangeC ; self.nrangeC = nlp.nrangeC

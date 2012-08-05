@@ -270,6 +270,24 @@ class ReducedLinearOperator:
         self.col_indices = col_indices
         self.shape = (len(row_indices), len(col_indices))
         self.symmetric = False  # Generally.
+        self.transposed = kwargs.get('transposed', False)
+        transpose_of = kwargs.get('transpose_of', None)
+
+        if transpose_of is None:
+            if A.T is not None:
+                self.T = ReducedLinearOperator(A.T, col_indices, row_indices, 
+                                                transposed=not self.transposed,
+                                                transpose_of=self, **kwargs)
+            else:
+                self.T = None
+        else:
+            # Use operator supplied as transpose operator.
+            if isinstance(transpose_of, ReducedLinearOperator):
+                self.T = transpose_of
+            else:
+                msg = 'kwarg transposed_of must be a ReducedLinearOperator.'
+                msg += ' Got ' + str(transpose_of.__class__)
+                raise ValueError, msg
 
     def __mul__(self, x):
         # Return the result of A[I,J]*x. Note that the input x must have
