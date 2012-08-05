@@ -315,7 +315,9 @@ class BQP(object):
         qp = self.qp
         n = qp.n
         maxiter = kwargs.get('maxiter', 5*n)
-        self.stoptol = kwargs.get('stoptol', 1.0e-3)
+        #self.stoptol = kwargs.get('stoptol', 1.0e-3)
+        abstol = kwargs.get('abstol', 1.0e-8)
+        reltol = kwargs.get('reltol', 1.0e-6)
 
         # Compute initial data.
 
@@ -331,7 +333,7 @@ class BQP(object):
         pg = self.pgrad(x, g=g, active_set=(lower,upper))
         pgNorm = np.linalg.norm(pg)
 
-        stoptol = self.stoptol*pgNorm + 1e-5
+        stoptol = reltol * pgNorm + abstol
         self.log.debug('Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm))
 
         exitOptimal = exitIter = False
