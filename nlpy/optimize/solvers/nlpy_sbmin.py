@@ -21,37 +21,10 @@ def pass_to_sbmin(nlp, **kwargs):
 
     t = cputime()
     tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
-
-    # we select a trust-region subproblem solver of our choice.
     sbmin = SBMINFramework(nlp, tr, TRSolver, **kwargs)
-
     t_setup = cputime() - t                  # Setup time
-
     sbmin.Solve()
-
     return (t_setup, sbmin)
-
-    # Output final statistics
-    print
-    print 'Final variables:', SBMIN.x
-    print
-    print '-------------------------------'
-    print 'SBMIN: End of Execution'
-    print '  Problem                               : %-s' % ProblemName
-    print '  Dimension                             : %-d' % nlp.n
-    print '  Initial/Final Objective               : %-g/%-g' % (SBMIN.f0, SBMIN.f)
-    print '  Initial/Final Projected Gradient Norm : %-g/%-g' % (SBMIN.pg0, SBMIN.pgnorm)
-    print '  Number of iterations        : %-d' % SBMIN.iter
-    print '  Number of function evals    : %-d' % SBMIN.nlp.feval
-    print '  Number of gradient evals    : %-d' % SBMIN.nlp.geval
-    print '  Number of Hessian  evals    : %-d' % SBMIN.nlp.Heval
-    print '  Number of matvec products   : %-d' % SBMIN.nlp.Hprod
-    print '  Total/Average BQP iter      : %-d/%-g' % (SBMIN.total_bqpiter, (float(SBMIN.total_bqpiter)/SBMIN.iter))
-    print '  Setup/Solve time            : %-gs/%-gs' % (t_setup, SBMIN.tsolve)
-    print '  Total time                  : %-gs' % (t_setup + SBMIN.tsolve)
-    print '  Status                      :', SBMIN.status
-    print '-------------------------------'
-    return SBMIN
 
 
 if len(sys.argv) < 2:
@@ -102,48 +75,47 @@ opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
 opts['plot_radi'] = options.plot_radi
 
-# Create root logger.
-log = logging.getLogger('nlpy.sbmin')
-log.setLevel(logging.INFO)
-fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
-
-if options.output_file is not None:
-    opts['output_file'] = options.output_file
-    hndlr = logging.FileHandler(options.output_file, mode='w')
-else:
-    hndlr = logging.StreamHandler(sys.stdout)
-hndlr.setFormatter(fmt)
-log.addHandler(hndlr)
-
 # Set printing standards for arrays
 numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 
-# Configure subproblem logger.
-config_logger('nlpy.bqp',
-              filename='sbmin-bqp.log',
-              filemode='w',
-              stream=None)
-
-def apply_scaling(nlp):
-    "Apply scaling to the NLP and print something if asked."
-    gNorm = nlp.compute_scaling_obj()
-    log.info('%17s: %8s %8s %8s'     % ('Scaling applied', '|g| unscaled', '|g| scaled', 'component'))
-    log.info('%17s: %8.1e %8.1e'     % ('  objective', gNorm, nlp.scale_obj * gNorm))
-    log.info('')
-
 multiple_problems = len(args) > 1
 error = False
+fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
 
 if multiple_problems:
-    # Define formats for output table.
-    hdrfmt = '%-10s %5s %5s %5s %15s %6s %5s'
 
-    hdr = hdrfmt % ('Name', 'n', 'm', 'Iter', 'Objective', 'Solve', 'Opt')
+    # Create root logger.
+    sbminlogger = logging.getLogger('nlpy.sbmin')
+    sbminlogger.setLevel(logging.INFO)
+
+    if options.output_file is not None:
+        opts['output_file'] = options.output_file
+        hndlr = logging.FileHandler(options.output_file, mode='w')
+    else:
+        hndlr = logging.StreamHandler(sys.stdout)
+    hndlr.setFormatter(fmt)
+    sbminlogger.addHandler(hndlr)
+
+    # Configure subproblem logger.
+    config_logger('nlpy.bqp',
+                filename='sbmin-bqp.log',
+                filemode='w',
+                stream=None)
+
+    # Define formats for output table.
+    hdrfmt = '%-10s %5s %5s %5s %15s %6s %6s'
+
+    hdr = hdrfmt % ('Name', 'n', 'Iter', 'Hprod', 'Objective', 'Solve', 'Opt')
     lhdr = len(hdr)
-    fmt = '%-10s %5d %5d %5d %15.8e %5s %6.2f'
-    log.info(hdr)
-    log.info('-' * lhdr)
+    fmt = '%-10s %5d %5d %5d %15.8e %6s %6.2f'
+    sbminlogger.info(hdr)
+    sbminlogger.info('-' * lhdr)
+
 else:
+
+    hndlr = logging.StreamHandler(sys.stdout)
+    hndlr.setFormatter(fmt)
+
     # Configure sbmin logger.
     if options.print_level >= 1:
         sbminlogger = logging.getLogger('nlpy.sbmin')
@@ -165,6 +137,14 @@ else:
         pcglogger.addHandler(hndlr)
         pcglogger.propagate = False
 
+
+def apply_scaling(nlp):
+    "Apply scaling to the NLP and print something if asked."
+    gNorm = nlp.compute_scaling_obj()
+    sbminlogger.info('%17s: %8s %8s' % ('Scaling applied', 'g unscaled', '|g| scaled'))
+    sbminlogger.info('%17s: %8.1e %8.1e'     % ('  objective', gNorm, nlp.scale_obj * gNorm))
+    sbminlogger.info('')
+
 # Solve each problem in turn.
 for ProblemName in args:
     nlp = amplpy.MFAmplModel(ProblemName)         # Create a model
@@ -175,34 +155,32 @@ for ProblemName in args:
     total_time = cputime() - t
 
     if multiple_problems:
-        log.info(fmt % (ProblemName, nlp.n, nlp.m, SBMIN.iter, SBMIN.f,
-                        repr(SBMIN.status), total_time))
+        sbminlogger.info(fmt % (ProblemName, nlp.n, SBMIN.iter, SBMIN.nlp.Hprod,
+                                SBMIN.f, repr(SBMIN.status), total_time))
 
     nlp.close()                                 # Close connection with model
 
 if not multiple_problems and not error:
     # Output final statistics
-    log.info('')
-    log.info('Final variables: %-s' % repr(SBMIN.x))
-    log.info('')
-    log.info('-------------------------------')
-    log.info('SBMIN: End of Execution')
-    log.info('  Problem                               : %-s' % ProblemName)
-    log.info('  Dimension                             : %-d' % nlp.n)
-    log.info('  Initial/Final Objective               : %-g/%-g' % (SBMIN.f0, SBMIN.f))
-    log.info('  Initial/Final Projected Gradient Norm : %-g/%-g' % (SBMIN.pg0, SBMIN.pgnorm))
-    log.info('  Number of iterations        : %-d' % SBMIN.iter)
-    log.info('  Number of function evals    : %-d' % SBMIN.nlp.feval)
-    log.info('  Number of gradient evals    : %-d' % SBMIN.nlp.geval)
-    log.info('  Number of Hessian  evals    : %-d' % SBMIN.nlp.Heval)
-    log.info('  Number of Jacobian matvecs   : %-d' % SBMIN.nlp.Jprod)
-    log.info('  Number of Jacobian.T matvecs : %-d' % SBMIN.nlp.JTprod)
-    log.info('  Number of Hessian matvecs    : %-d' % SBMIN.nlp.Hprod)
-    log.info('  Total/Average BQP iter      : %-d/%-g' % (SBMIN.total_bqpiter, (float(SBMIN.total_bqpiter)/SBMIN.iter)))
-    log.info('  Setup/Solve time            : %-gs/%-gs' % (t_setup, SBMIN.tsolve))
-    log.info('  Total time                  : %-gs' % (total_time))
-    log.info('  Status                      : %-s', SBMIN.status)
-    log.info('-------------------------------')
+    sbminlogger.info('')
+    sbminlogger.info('Final variables: %-s' % repr(SBMIN.x))
+    sbminlogger.info('')
+    sbminlogger.info('-------------------------------')
+    sbminlogger.info('SBMIN: End of Execution')
+    sbminlogger.info('  Problem                               : %-s' % ProblemName)
+    sbminlogger.info('  Dimension                             : %-d' % nlp.n)
+    sbminlogger.info('  Initial/Final Objective               : %-g/%-g' % (SBMIN.f0, SBMIN.f))
+    sbminlogger.info('  Initial/Final Projected Gradient Norm : %-g/%-g' % (SBMIN.pg0, SBMIN.pgnorm))
+    sbminlogger.info('  Number of iterations        : %-d' % SBMIN.iter)
+    sbminlogger.info('  Number of function evals    : %-d' % SBMIN.nlp.feval)
+    sbminlogger.info('  Number of gradient evals    : %-d' % SBMIN.nlp.geval)
+    sbminlogger.info('  Number of Hessian  evals    : %-d' % SBMIN.nlp.Heval)
+    sbminlogger.info('  Number of Hessian matvecs   : %-d' % SBMIN.nlp.Hprod)
+    sbminlogger.info('  Total/Average BQP iter      : %-d/%-g' % (SBMIN.total_bqpiter, (float(SBMIN.total_bqpiter)/SBMIN.iter)))
+    sbminlogger.info('  Setup/Solve time            : %-gs/%-gs' % (t_setup, SBMIN.tsolve))
+    sbminlogger.info('  Total time                  : %-gs' % (total_time))
+    sbminlogger.info('  Status                      : %-s', SBMIN.status)
+    sbminlogger.info('-------------------------------')
 
     # Plot the evolution of the trust-region radius on the last problem
     if opts['plot_radi'] == True:
@@ -214,7 +192,6 @@ if not multiple_problems and not error:
             sys.stderr.write('radius, right now.\n')
             sys.exit(0)
         radii = numpy.array(SBMIN.radii, 'd')
-        #pylab.plot(numpy.where(radii < 100, radii, 100))
         pylab.plot(radii)
         pylab.title('Trust-region radius')
         pylab.show()
