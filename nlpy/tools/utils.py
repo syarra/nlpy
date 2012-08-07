@@ -4,6 +4,21 @@ import numpy as np
 import logging
 from math import copysign, sqrt
 
+
+def Max(a):
+    """
+    A safeguarded max function. Returns -infinity for empty arrays.
+    """
+    return np.max(a) if a.size > 0 else -np.inf
+
+
+def Min(a):
+    """
+    A safeguarded min function. Returns +infinity for empty arrays.
+    """
+    return np.min(a) if a.size > 0 else np.inf
+
+
 class NullHandler(logging.Handler):
     '''
     A simple implementation of the null handler for Python 2.6.x (and older?)
