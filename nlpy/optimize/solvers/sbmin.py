@@ -40,10 +40,10 @@ class SBMINFramework(object):
 
     :parameters:
 
-        :nlp:   a :class:`NLPModel` object representing the problem. For
-                instance, nlp may arise from an AMPL model
-        :TR:    a :class:`TrustRegionFramework` object
-        :TrSolver:   a :class:`TrustRegionSolver` object.
+        :nlp:       a :class:`NLPModel` object representing the problem. For
+                      instance, nlp may arise from an AMPL model
+        :TR:        a :class:`TrustRegionFramework` object
+        :TrSolver:  a :class:`TrustRegionSolver` object.
 
 
     :keywords:
@@ -466,15 +466,22 @@ class TrustBQPModel(NLPModel):
 
     def obj(self, x, **kwargs):
         Hx = self.nlp.hprod(self.xk, None, x)
-        qapprox = np.dot(self.gk, x)
-        qapprox += .5 * np.dot(x, Hx)
-
-        return qapprox
+        Hx *= 0.5
+        Hx += self.gk
+        return np.dot(x, Hx)
 
     def grad(self, x, **kwargs):
-        g = self.gk.copy()
-        g += self.nlp.hprod(self.xk, None, x)
+        g = self.nlp.hprod(self.xk, None, x)
+        g += self.gk
         return g
+
+    def objgrad(self, x, **kwargs):
+        Hx = self.nlp.hprod(self.xk, None, x)
+        g = self.gk + Hx
+        Hx *= 0.5
+        Hx += self.gk
+        q = np.dot(x, Hx)
+        return (q, g)
 
     def hprod(self, x, pi, p, **kwargs):
         return self.nlp.hprod(self.xk, None, p)
