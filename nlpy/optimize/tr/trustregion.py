@@ -6,9 +6,8 @@ Class definition for Trust-Region Algorithm
 from nlpy.krylov.pcg  import TruncatedCG
 from nlpy.krylov.ppcg import ProjectedCG
 import numpy as np
-from math import sqrt
 import nlpy.tools.norms as norms
-from nlpy.optimize.solvers.bqp2 import BQP, BQP_new
+from nlpy.optimize.solvers.bqp2 import BQP
 
 __docformat__ = 'restructuredtext'
 
@@ -251,12 +250,12 @@ class TrustRegionBQP(TrustRegionSolver):
 
     def __init__(self, bqp, g, **kwargs):
 
-        TrustRegionSolver.__init__(self, g,  **kwargs)
+        TrustRegionSolver.__init__(self, g, **kwargs)
         self.bqpSolver = BQP(bqp, **kwargs)
         self.niter = 0
         self.stepNorm = 0.0
         self.step = None
-        self.m = None # Model value at candidate solution
+        self.m = None  # Model value at candidate solution
 
     def Solve(self, **kwargs):
         """
@@ -266,7 +265,7 @@ class TrustRegionBQP(TrustRegionSolver):
         self.bqpSolver.solve(**kwargs)
         self.niter = self.bqpSolver.niter
         self.stepNorm = norms.norm_infty(self.bqpSolver.x)
-        self.step= self.bqpSolver.x
+        self.step = self.bqpSolver.x
         self.m = self.bqpSolver.qval
         return
 
