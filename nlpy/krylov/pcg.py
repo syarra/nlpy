@@ -137,14 +137,17 @@ class TruncatedCG:
         if 's0' in kwargs:
             s = kwargs['s0']
             snorm2 = np.linalg.norm(s)
-            r += H*s                 # r = g + H s0
+            Hs = H * s
+            r += Hs                 # r = g + H s0
+            Hs *= 0.5
+            Hs += g
+            self.qval = np.dot(s, Hs)
         else:
             s = np.zeros(n)
             snorm2 = 0.0
+            self.qval = 0.0
         y = prec(r)
         ry = np.dot(r, y)
-
-        exitOptimal = exitIter = exitUser = False
 
         try:
             sqrtry = sqrt(ry)
@@ -154,6 +157,9 @@ class TruncatedCG:
             raise ValueError, msg
 
         stopTol = max(abstol, reltol * sqrtry)
+
+        exitOptimal = sqrtry <= stopTol
+        exitIter = exitUser = False
 
         # Initialize r as a copy of g not to alter the original g
         if 'p0' in kwargs:
@@ -207,6 +213,9 @@ class TruncatedCG:
                 onBoundary = True
                 continue
 
+            # Update objective function value.
+            self.qval += alpha * np.dot(r, p) + 0.5 * alpha * alpha * pHp
+
             # Move to next iterate.
             s += alpha * p
             r += alpha * Hp
@@ -220,10 +229,9 @@ class TruncatedCG:
             else:
                 beta = ry_next/ry
 
-            try:
-                p = -y + beta * p
-            except:
-                pdb.set_trace()
+            #p = -y + beta * p
+            p *= beta
+            p -= y
 
             ry = ry_next
 
@@ -246,7 +254,7 @@ class TruncatedCG:
             self.beta = beta
             self.ry = ry
             self.alpha = alpha
-            self.qval = model_value(H,g,s)
+            #self.qval = model_value(H,g,s)
             self.iter = k
 
             try:
@@ -261,7 +269,7 @@ class TruncatedCG:
         # Output info about the last iteration.
         # if debug:
         self.log.info(self.fmt % (k, ry, pHp))
-        self.log.debug('qval: %6.2e' % model_value(H,g,s))
+        self.log.debug('qval: %6.2e' % self.qval)
         if k < maxiter and not onBoundary and not infDescent and not exitUser:
             self.status = 'residual small'
         elif k >= maxiter:
