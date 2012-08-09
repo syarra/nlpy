@@ -156,11 +156,13 @@ class BQP(object):
         Safety function. Check that x is feasible with respect to the
         bound constraints.
         """
-        Px = self.project(x)
-        if not identical(x, Px):
-            print 'x  = ', x
-            print 'Px = ', Px
+        if not np.all(x >= self.Lvar) or not np.all(x <= self.Uvar):
             raise InfeasibleError
+        #Px = self.project(x)
+        #if not identical(x, Px):
+        #    print 'x  = ', x
+        #    print 'Px = ', Px
+        #    raise InfeasibleError
         return None
 
     def pgrad(self, x, g=None, active_set=None, check_feasible=True):
@@ -294,16 +296,18 @@ class BQP(object):
                 increase = True
                 x_ok = xps.copy()  # Most recent iterate satisfying Armijo.
                 q_ok = q_xps
+                q_prev = q_xps
                 while increase and step <= bk_max:
                     step *= 1.5
                     xps = self.project(x + step * d)
                     q_xps = qp.obj(xps)
                     self.log.debug('  Extrapolating with step = %7.1e q = %7.1e' % (step, q_xps))
                     slope = np.dot(g, xps - x)
-                    increase = slope < 0 and (q_xps < qval + factor * slope)
+                    increase = slope < 0 and (q_xps < qval + factor * slope) and q_xps <= q_prev
                     if increase:
                         x_ok = xps.copy()
                         q_ok = q_xps
+                        q_prev = q_xps
                 xps = x_ok
                 q_xps = q_ok
 
@@ -502,8 +506,8 @@ class BQP(object):
             d[free_vars] = cg.step
 
             if cg.infDescent and cg.step.size != 0 and cg.dir.size != 0:
-                msg  = 'iter :%d  Negative curvature detected'
-                msg += ' (%d its)' % (iter, cg.niter)
+                msg  = 'iter :%d  Negative curvature detected' % iter
+                msg += ' (%d its)' % cg.niter
                 self.log.debug(msg)
 
                 nc_dir = np.zeros(n)
@@ -513,7 +517,7 @@ class BQP(object):
                 # 4. Update x using projected linesearch with initial step=1.
                 (x, qval) = self.projected_linesearch(x, g, d, qval)
 
-            self.log.debug('q after first CG pass = %8.2g' % qp.obj(x))
+                self.log.debug('q after first CG pass = %8.2g' % qval)
 
             g = qp.grad(x)
             pg = self.pgrad(x, g=g, active_set=(lower, upper))
@@ -553,8 +557,8 @@ class BQP(object):
                 d[free_vars] = cg.step
 
                 if cg.infDescent and cg.step.size != 0:
-                    msg  = 'iter :%d  Negative curvature detected'
-                    msg += ' (%d its)' % (iter, cg.niter)
+                    msg  = 'iter :%d  Negative curvature detected' % iter
+                    msg += ' (%d its)' % cg.niter
                     self.log.debug(msg)
 
                     nc_dir = np.zeros(n)
