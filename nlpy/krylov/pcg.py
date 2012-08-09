@@ -268,8 +268,8 @@ class TruncatedCG:
 
         # Output info about the last iteration.
         # if debug:
-        self.log.info(self.fmt % (k, ry, pHp))
-        self.log.debug('qval: %6.2e' % self.qval)
+        #self.log.info(self.fmt % (k, ry, pHp))
+        #self.log.debug('qval: %6.2e' % self.qval)
         if k < maxiter and not onBoundary and not infDescent and not exitUser:
             self.status = 'residual small'
         elif k >= maxiter:
