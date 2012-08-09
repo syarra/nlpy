@@ -20,7 +20,7 @@ def pass_to_sbmin(nlp, **kwargs):
         return None
 
     t = cputime()
-    tr = TR(eta1=0.25, eta2=0.75, gamma1=0.0625, gamma2=2)
+    tr = TR(eta1=1.0e-4, eta2=0.9, gamma1=0.3, gamma2=2.5)
     sbmin = SBMINFramework(nlp, tr, TRSolver, **kwargs)
     t_setup = cputime() - t                  # Setup time
     sbmin.Solve()
@@ -117,11 +117,12 @@ else:
     hndlr.setFormatter(fmt)
 
     # Configure sbmin logger.
+    sbminlogger = logging.getLogger('nlpy.sbmin')
+    sbminlogger.addHandler(hndlr)
+    sbminlogger.propagate = False
+    sbminlogger.setLevel(logging.INFO)
     if options.print_level >= 1:
-        sbminlogger = logging.getLogger('nlpy.sbmin')
         sbminlogger.setLevel(logging.DEBUG)
-        sbminlogger.addHandler(hndlr)
-        sbminlogger.propagate = False
 
     # Configure bqp logger.
     if options.print_level >= 2:
@@ -141,9 +142,8 @@ else:
 def apply_scaling(nlp):
     "Apply scaling to the NLP and print something if asked."
     gNorm = nlp.compute_scaling_obj()
-    sbminlogger.info('%17s: %8s %8s' % ('Scaling applied', 'g unscaled', '|g| scaled'))
-    sbminlogger.info('%17s: %8.1e %8.1e'     % ('  objective', gNorm, nlp.scale_obj * gNorm))
-    sbminlogger.info('')
+    #sbminlogger.info('%17s: %8s %8s' % ('Scaling applied', 'g unscaled', '|g| scaled'))
+    #sbminlogger.info('%17s: %8.1e %8.1e'     % ('  objective', gNorm, nlp.scale_obj * gNorm))
 
 # Solve each problem in turn.
 for ProblemName in args:
