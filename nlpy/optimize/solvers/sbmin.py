@@ -15,15 +15,6 @@ from nlpy.model import NLPModel
 __docformat__ = 'restructuredtext'
 
 
-def FormEntireMatrix(on, om, Jop):
-    J = np.zeros([om, on])
-    for i in range(0, on):
-        v = np.zeros(on)
-        v[i] = 1.
-        J[:, i] = Jop * v
-    return J
-
-
 class SBMINFramework(object):
     """
     An abstract framework for a trust-region-based algorithm for the nonlinear
@@ -97,7 +88,7 @@ class SBMINFramework(object):
             self.magic_steps_cons = False
 
         # Options for non monotone descent strategy
-        self.monotone = kwargs.get('monotone', True)
+        self.monotone = kwargs.get('monotone', False)
         self.nIterNonMono = kwargs.get('nIterNonMono', 25)
 
         self.abstol  = kwargs.get('abstol', 1.0e-8)
@@ -118,6 +109,7 @@ class SBMINFramework(object):
         # Setup the logger. Install a NullHandler if no output needed.
         logger_name = kwargs.get('logger_name', 'nlpy.sbmin')
         self.log = logging.getLogger(logger_name)
+        self.log.addHandler(logging.NullHandler())
         if not self.verbose:
             self.log.propagate = False
 
@@ -167,8 +159,8 @@ class SBMINFramework(object):
             self.lg_old = self.nlp.lgrad(self.x)
 
         self.f  = self.f0
-        self.g  = self.g_old
-        self.lg = self.lg_old
+        #self.g  = self.g_old
+        #self.lg = self.lg_old
 
         # Reset initial trust-region radius.
         self.TR.Delta = np.maximum(0.1 * self.pgnorm, .2)
