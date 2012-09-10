@@ -11,6 +11,7 @@ import logging
 from optparse import OptionParser
 import numpy
 import sys
+import os
 
 
 def pass_to_sbmin(nlp, **kwargs):
@@ -41,9 +42,9 @@ parser.add_option("-s", "--magic_steps", action="store", type="string",
                   default=None, dest="magic_steps",
                   help="Enable magical steps (None, 'cons': for conservative, or \
                         'agg': for aggressive)")
-parser.add_option("-m", "--monotone", action="store_false",
-                  default=True, dest="monotone",
-                  help="Enable non monotone strategy")
+parser.add_option("-m", "--monotone", action="store_true",
+                  default=False, dest="monotone",
+                  help="Enable monotone strategy")
 parser.add_option("-y", "--nocedal_yuan", action="store_true",
                   default=False, dest="ny",
                   help="Enable Nocedal-Yuan backtracking strategy")
@@ -55,9 +56,7 @@ parser.add_option("-p", "--print_level", action="store", type="int",
 parser.add_option("-r", "--plot_radi", action="store_true",
                   default=False, dest="plot_radi",
                   help="Plot the evolution of the trust-region radius")
-parser.add_option("-o", "--output_file", action="store", type="string",
-                  default=None, dest="output_file",
-                  help="Redirect iterations detail in an output file")
+
 # Parse command-line options
 (options, args) = parser.parse_args()
 
@@ -82,34 +81,32 @@ multiple_problems = len(args) > 1
 error = False
 fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
 
+# Create root logger.
+nlpylogger = logging.getLogger('root')
+nlpylogger.setLevel(logging.INFO)
+hndlr = logging.StreamHandler(sys.stdout)
+hndlr.setFormatter(fmt)
+nlpylogger.addHandler(hndlr)
+
 if multiple_problems:
 
-    # Create root logger.
-    sbminlogger = logging.getLogger('nlpy.sbmin')
-    sbminlogger.setLevel(logging.INFO)
-
-    if options.output_file is not None:
-        opts['output_file'] = options.output_file
-        hndlr = logging.FileHandler(options.output_file, mode='w')
-    else:
-        hndlr = logging.StreamHandler(sys.stdout)
-    hndlr.setFormatter(fmt)
-    sbminlogger.addHandler(hndlr)
+    nlpylogger.propagate = False
 
     # Configure subproblem logger.
-    config_logger('nlpy.bqp',
-                filename='sbmin-bqp.log',
+    config_logger('nlpy.sbmin',
+                filename='sbmin.log',
                 filemode='w',
-                stream=None)
+                stream=None,
+                propagate=False)
 
     # Define formats for output table.
     hdrfmt = '%-10s %5s %5s %5s %15s %6s %6s'
 
-    hdr = hdrfmt % ('Name', 'n', 'Iter', 'Hprod', 'Objective', 'Solve', 'Opt')
+    hdr = hdrfmt % ('Name', 'n', 'Iter', 'Hprod', 'Objective', 'Solve', 'Time')
     lhdr = len(hdr)
     fmt = '%-10s %5d %5d %5d %15.8e %6s %6.2f'
-    sbminlogger.info(hdr)
-    sbminlogger.info('-' * lhdr)
+    nlpylogger.info(hdr)
+    nlpylogger.info('-' * lhdr)
 
 else:
 
@@ -121,22 +118,26 @@ else:
     sbminlogger.addHandler(hndlr)
     sbminlogger.propagate = False
     sbminlogger.setLevel(logging.INFO)
-    if options.print_level >= 1:
+    if options.print_level >= 4:
         sbminlogger.setLevel(logging.DEBUG)
 
     # Configure bqp logger.
     if options.print_level >= 2:
         bqplogger = logging.getLogger('nlpy.bqp')
-        bqplogger.setLevel(logging.DEBUG)
+        bqplogger.setLevel(logging.INFO)
         bqplogger.addHandler(hndlr)
         bqplogger.propagate = False
+        if options.print_level >= 4:
+            bqplogger.setLevel(logging.DEBUG)
 
     # Configure pcg logger
     if options.print_level >= 3:
         pcglogger = logging.getLogger('nlpy.pcg')
-        pcglogger.setLevel(logging.DEBUG)
+        pcglogger.setLevel(logging.INFO)
         pcglogger.addHandler(hndlr)
         pcglogger.propagate = False
+        if options.print_level >= 4:
+            pcglogger.setLevel(logging.DEBUG)
 
 
 def apply_scaling(nlp):
@@ -155,7 +156,8 @@ for ProblemName in args:
     total_time = cputime() - t
 
     if multiple_problems:
-        sbminlogger.info(fmt % (ProblemName, nlp.n, SBMIN.iter, SBMIN.nlp.Hprod,
+        problemName = os.path.splitext(os.path.basename(ProblemName))[0]
+        nlpylogger.info(fmt % (problemName, nlp.n, SBMIN.iter, SBMIN.nlp.Hprod,
                                 SBMIN.f, repr(SBMIN.status), total_time))
 
     nlp.close()                                 # Close connection with model
