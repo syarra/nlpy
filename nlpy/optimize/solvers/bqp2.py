@@ -21,6 +21,8 @@ import numpy as np
 import logging
 import warnings
 
+import pdb
+
 
 __docformat__ = 'restructuredtext'
 
@@ -156,13 +158,13 @@ class BQP(object):
         Safety function. Check that x is feasible with respect to the
         bound constraints.
         """
-        if not np.all(x >= self.Lvar) or not np.all(x <= self.Uvar):
+        if np.any((x < self.Lvar) | (x > self.Uvar)):
+            out = where((x < self.Lvar) | (x > self.Uvar))
+            print 'Lvar = ', self.Lvar[out]
+            print 'x    = ', x[out]
+            print 'Uvar = ', self.Uvar[out]
+            pdb.set_trace()
             raise InfeasibleError
-        #Px = self.project(x)
-        #if not identical(x, Px):
-        #    print 'x  = ', x
-        #    print 'Px = ', Px
-        #    raise InfeasibleError
         return None
 
     def pgrad(self, x, g=None, active_set=None, check_feasible=True):
@@ -264,6 +266,9 @@ class BQP(object):
         # Obtain stepsize to nearest and farthest breakpoints.
         bk_min, bk_max = self.breakpoints(x, d)
 
+        if kwargs.get('use_bk_min', False):
+            step = bk_min
+
         xps = self.project(x + step * d)
         q_xps = qp.obj(xps)
         slope = np.dot(g, xps - x)
@@ -276,11 +281,7 @@ class BQP(object):
 
         decrease = (q_xps < qval + step * factor * slope)
 
-        # If step takes us past the first breakpoint or
-        # does not yield sufficient decrease, backtrack.
-        # backtrack = past_bkpt or not decrease
-
-        if not decrease:  # backtrack:
+        if not decrease:
             # Perform projected Armijo linesearch in order to reduce the step
             # until a successful step is found.
             while not decrease and step >= 1.0e-8:
@@ -380,37 +381,47 @@ class BQP(object):
 
         return (x, (lower, upper))
 
-    def to_boundary(self, x, d, free_vars):
+    def to_boundary(self, x, d, free_vars, **kwargs):
         """
         Given vectors `x` and `d` and some bounds on x,
         return a positive alpha such that
 
           `x + alpha * d = boundary
         """
-        nonzeroind = d != 0.
-        nonzerod = d[nonzeroind]
+        #nonzeroind = d != 0.
+        #nonzerod = d[nonzeroind]
 
-        if np.all(d[free_vars] == 0.) == 0:
+        #if np.all(d[free_vars] == 0.) == 0:
 
-            # Follow the direction of negative curvature until it hits a bound
-            aup = (self.Uvar[nonzeroind] - x[nonzeroind]) / nonzerod
-            aupp = aup[aup > -1e-60]
-            alow = (self.Lvar[nonzeroind] - x[nonzeroind]) / nonzerod
-            alowp = alow[alow > -1e-60]
-            if aupp.size != 0:
-                aupmin = np.min(aupp)
-                if alowp.size != 0:
-                    alowmin = np.min(alowp)
-                    alpha = np.minimum(alowmin, aupmin)
-                else:
-                    alpha = aupmin
-            else:
-                if alowp.size != 0:
-                    alpha = np.min(alowp)
-                else:
-                    alpha = 0.
+        #    # Follow the direction of negative curvature until it hits a bound
+        #    aup = (self.Uvar[nonzeroind] - x[nonzeroind]) / nonzerod
+        #    aupp = aup[aup > -1e-60]
+        #    alow = (self.Lvar[nonzeroind] - x[nonzeroind]) / nonzerod
+        #    alowp = alow[alow > -1e-60]
+        #    if aupp.size != 0:
+        #        aupmin = np.min(aupp)
+        #        if alowp.size != 0:
+        #            alowmin = np.min(alowp)
+        #            alpha = np.minimum(alowmin, aupmin)
+        #        else:
+        #            alpha = aupmin
+        #    else:
+        #        if alowp.size != 0:
+        #            alpha = np.min(alowp)
+        #        else:
+        #            alpha = 0.
 
-            x += alpha * d
+        #    x += alpha * d
+
+        check_feasible = kwargs.get('check_feasible', True)
+        if check_feasible:
+            self.check_feasible(x)
+
+        # Obtain stepsize to nearest and farthest breakpoints.
+        bk_min, _ = self.breakpoints(x, d)
+
+        #x += bk_min * d
+        x = self.project(x + bk_min * d)  # To avoid tiny rounding errors.
 
         # Do another projected gradient update
         (x, (lower, upper)) = self.projected_gradient(x)
@@ -513,6 +524,7 @@ class BQP(object):
                 nc_dir = np.zeros(n)
                 nc_dir[free_vars] = cg.dir
                 (x, (lower, upper)) = self.to_boundary(x, nc_dir, free_vars)
+                #(x, qval) = self.projected_linesearch(x, g, d, qval, use_bk_min=True)
             else:
                 # 4. Update x using projected linesearch with initial step=1.
                 (x, qval) = self.projected_linesearch(x, g, d, qval)
@@ -520,7 +532,7 @@ class BQP(object):
                 self.log.debug('q after first CG pass = %8.2g' % qval)
 
             g = qp.grad(x)
-            pg = self.pgrad(x, g=g, active_set=(lower, upper))
+            pg = self.pgrad(x, g=g) #, active_set=(lower, upper))
             pgNorm = np.linalg.norm(pg)
 
             if pgNorm <= stoptol:
@@ -565,6 +577,7 @@ class BQP(object):
                     nc_dir[free_vars] = cg.dir
                     (x, (lower, upper)) = self.to_boundary(x, nc_dir, free_vars)
                     qval = qp.obj(x)
+                    #(x, qval) = self.projected_linesearch(x, g, d, qval, use_bk_min=True)
                 else:
                     # 4. Update x using projected linesearch with step=1.
                     (x, qval) = self.projected_linesearch(x, g, d, qval)
