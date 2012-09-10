@@ -12,7 +12,7 @@ truncated preconditioned conjugate gradient algorithm as described in
 from nlpy.tools.exceptions import UserExitRequest
 from nlpy.tools.utils import NullHandler
 import numpy as np
-import logging, ipdb
+import logging
 from math import sqrt
 import sys
 
@@ -201,6 +201,7 @@ class TruncatedCG:
                 self.status = 'infinite descent'
                 snorm2 = 0
                 self.dir = p
+                self.pHp = pHp
                 infDescent = True
                 continue
 
