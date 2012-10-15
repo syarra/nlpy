@@ -21,7 +21,7 @@ import numpy as np
 import logging
 import warnings
 
-import pdb
+#import pdb
 
 
 __docformat__ = 'restructuredtext'
@@ -284,9 +284,10 @@ class BQP(object):
         if not decrease:
             # Perform projected Armijo linesearch in order to reduce the step
             # until a successful step is found.
-            while not decrease and step >= 1.0e-8:
+            while not decrease and step >= 1.0e-25:
                 step /= 3
                 xps = self.project(x + step * d)
+                #if identical(x+step*d, xps):
                 q_xps = qp.obj(xps)
                 self.log.debug('  Backtracking with step = %7.1e q = %7.1e' % (step, q_xps))
                 decrease = (q_xps < qval + step * factor * slope)
@@ -299,12 +300,13 @@ class BQP(object):
                 q_ok = q_xps
                 q_prev = q_xps
                 while increase and step <= bk_max:
-                    step *= 1.5
+                    step *= 3
                     xps = self.project(x + step * d)
+                    #if identical(x+step*d, xps):
                     q_xps = qp.obj(xps)
                     self.log.debug('  Extrapolating with step = %7.1e q = %7.1e' % (step, q_xps))
                     slope = np.dot(g, xps - x)
-                    increase = slope < 0 and (q_xps < qval + factor * slope) and q_xps <= q_prev
+                    increase = slope < 0 and (q_xps < qval + step * factor * slope) and q_xps <= q_prev
                     if increase:
                         x_ok = xps.copy()
                         q_ok = q_xps
@@ -388,31 +390,6 @@ class BQP(object):
 
           `x + alpha * d = boundary
         """
-        #nonzeroind = d != 0.
-        #nonzerod = d[nonzeroind]
-
-        #if np.all(d[free_vars] == 0.) == 0:
-
-        #    # Follow the direction of negative curvature until it hits a bound
-        #    aup = (self.Uvar[nonzeroind] - x[nonzeroind]) / nonzerod
-        #    aupp = aup[aup > -1e-60]
-        #    alow = (self.Lvar[nonzeroind] - x[nonzeroind]) / nonzerod
-        #    alowp = alow[alow > -1e-60]
-        #    if aupp.size != 0:
-        #        aupmin = np.min(aupp)
-        #        if alowp.size != 0:
-        #            alowmin = np.min(alowp)
-        #            alpha = np.minimum(alowmin, aupmin)
-        #        else:
-        #            alpha = aupmin
-        #    else:
-        #        if alowp.size != 0:
-        #            alpha = np.min(alowp)
-        #        else:
-        #            alpha = 0.
-
-        #    x += alpha * d
-
         check_feasible = kwargs.get('check_feasible', True)
         if check_feasible:
             self.check_feasible(x)
@@ -433,9 +410,9 @@ class BQP(object):
         # Shortcuts for convenience.
         qp = self.qp
         n = qp.n
-        maxiter = kwargs.get('maxiter', 5 * n)
+        maxiter = kwargs.get('maxiter', 10 * n)
         abstol = kwargs.get('abstol', 1.0e-8)
-        reltol = kwargs.get('reltol', 1.0e-6)
+        reltol = kwargs.get('reltol', 1.0e-5)
 
         # Compute initial data.
 
@@ -582,7 +559,7 @@ class BQP(object):
                     # 4. Update x using projected linesearch with step=1.
                     (x, qval) = self.projected_linesearch(x, g, d, qval)
 
-                self.log.debug('q after second CG pass = %8.2g' % qp.obj(x))
+                self.log.debug('q after second CG pass = %8.2g' % qval)
 
                 g = qp.grad(x)
                 pg = self.pgrad(x, g=g, active_set=(lower, upper))
