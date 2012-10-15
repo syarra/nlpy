@@ -45,7 +45,6 @@ class MFModel(NLPModel):
 
         # Standard NLP initialization
         NLPModel.__init__(self,n=n,m=m,name=name,**kwargs)
-    # end def
 
 
     def jac(self, x, **kwargs):
@@ -144,7 +143,7 @@ class SlackNLP( MFModel ):
         self.hprod = nlp.hprod
         self.hiprod = self.hiprod
 
-        self.equalC = nlp.equalC ; self.nequalC = nlp.equalC
+        self.equalC = nlp.equalC ; self.nequalC = nlp.nequalC
         self.lowerC = nlp.lowerC ; self.nlowerC = nlp.nlowerC
         self.upperC = nlp.upperC ; self.nupperC = nlp.nupperC
         self.rangeC = nlp.rangeC ; self.nrangeC = nlp.nrangeC
