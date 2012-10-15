@@ -9,7 +9,7 @@ from nlpy.tools.timing import cputime
 from nlpy.tools.logs import config_logger
 import logging
 from optparse import OptionParser
-import numpy
+import numpy as np
 import sys
 import os
 
@@ -75,7 +75,7 @@ opts['print_level'] = options.print_level
 opts['plot_radi'] = options.plot_radi
 
 # Set printing standards for arrays
-numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
+np.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 
 multiple_problems = len(args) > 1
 error = False
@@ -160,7 +160,6 @@ for ProblemName in args:
         nlpylogger.info(fmt % (problemName, nlp.n, SBMIN.iter, SBMIN.nlp.Hprod,
                                 SBMIN.f, repr(SBMIN.status), total_time))
 
-    nlp.close()                                 # Close connection with model
 
 if not multiple_problems and not error:
     # Output final statistics
@@ -193,7 +192,7 @@ if not multiple_problems and not error:
             sys.stderr.write('at a plot of the evolution of the trust-region ')
             sys.stderr.write('radius, right now.\n')
             sys.exit(0)
-        radii = numpy.array(SBMIN.radii, 'd')
+        radii = np.array(SBMIN.radii, 'd')
         pylab.plot(radii)
         pylab.title('Trust-region radius')
         pylab.show()
