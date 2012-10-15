@@ -145,6 +145,7 @@ class SBMINFramework(object):
 
         # Gather initial information.
         self.x = self.project(self.x0)
+
         if self.f0 is None:
             self.f0 = nlp.obj(self.x)
         self.f = self.f0
@@ -204,7 +205,7 @@ class SBMINFramework(object):
             # Iteratively minimize the quadratic model in the trust region
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
-            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, g_k=self.g)
+            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, gk=self.g)
 
             cgtol = max(1.0e-6, min(0.5 * cgtol, sqrt(self.pgnorm)))
 
@@ -215,7 +216,6 @@ class SBMINFramework(object):
             self.true_step = self.solver.step.copy()
             stepnorm = self.solver.stepNorm
             bqpiter = self.solver.niter
-
             # Obtain model value at next candidate
             m = self.solver.m
 
@@ -456,14 +456,30 @@ class TrustBQPModel(NLPModel):
         if self.gk == None:
             self.gk = self.nlp.grad(self.xk)
 
+        # private values
+        self._x = np.infty * np.ones(self.nlp.n)
+        self._Hx = None
+
     def obj(self, x, **kwargs):
-        Hx = self.nlp.hprod(self.xk, None, x)
+        if not (self._x == x).all():
+            self._x = x.copy()
+            self._Hx = None
+        if self._Hx == None:
+            self._Hx = self.nlp.hprod(self.xk, None, x)
+
+        Hx = self._Hx.copy()
         Hx *= 0.5
         Hx += self.gk
         return np.dot(x, Hx)
 
     def grad(self, x, **kwargs):
-        g = self.nlp.hprod(self.xk, None, x)
+        if not (self._x == x).all():
+            self._x = x.copy()
+            self._Hx = None
+        if self._Hx == None:
+            self._Hx = self.nlp.hprod(self.xk, None, x)
+
+        g = self._Hx.copy()
         g += self.gk
         return g
 
