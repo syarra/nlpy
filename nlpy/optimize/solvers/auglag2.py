@@ -442,7 +442,7 @@ class AugmentedLagrangianFramework(object):
         if self.alprob.nlp.m != 0:
             self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
-        if status == 0:
+        if status == 'opt':
             # Safeguard: tighten tolerances only if desired optimality
             # is reached to prevent rapid decay of the tolerances from failed
             # inner loops
