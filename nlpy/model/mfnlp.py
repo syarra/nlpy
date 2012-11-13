@@ -10,9 +10,6 @@ __docformat__ = 'restructuredtext'
 # =============================================================================
 # Standard Python modules
 # =============================================================================
-import os, sys
-import pdb
-import copy
 import hashlib
 
 # =============================================================================
@@ -26,7 +23,6 @@ import numpy as np
 from nlpy.model import NLPModel
 from nlpy.krylov import SimpleLinearOperator
 from nlpy.tools import List
-from nlpy.krylov.linop import PysparseLinearOperator
 
 
 class MFModel(NLPModel):
@@ -191,11 +187,9 @@ class SlackNLP( MFModel ):
             f = self._last_obj
         elif self._last_obj is None and same_x:
             f = self.nlp.obj(self._last_x)
-            self.nlp.feval += 1
             self._last_obj = f
         else:
             f = self.nlp.obj(x[:self.original_n])
-            self.nlp.feval += 1
             self._last_obj = f
             self._last_x = x[:self.original_n].copy()
             self._last_x_hash = x_hash
@@ -221,11 +215,9 @@ class SlackNLP( MFModel ):
             g[:self.original_n] = self._last_grad
         elif self._last_grad is None and same_x:
             g[:self.original_n] = self.nlp.grad(self._last_x)
-            self.nlp.geval += 1
             self._last_grad = g[:self.original_n].copy()
         else:
             g[:self.original_n] = self.nlp.grad(x[:self.original_n])
-            self.nlp.geval += 1
             self._last_obj = None
             self._last_x = x[:self.original_n].copy()
             self._last_x_hash = x_hash
@@ -276,11 +268,9 @@ class SlackNLP( MFModel ):
             c[:om] = self._last_cons
         elif self._last_cons is None and same_x:
             c[:om] = nlp.cons(self._last_x)
-            nlp.ceval += 1
             self._last_cons = c[:om].copy()
         else:
             c[:om] = nlp.cons(x[:on])
-            nlp.ceval += 1
             self._last_obj = None
             self._last_x = x[:self.original_n].copy()
             self._last_x_hash = x_hash
@@ -380,7 +370,6 @@ class SlackNLP( MFModel ):
         p = np.zeros(m)
 
         p[:om] = nlp.jprod(x[:on], v[:on])
-        nlp.Jprod += 1
         p[upperC] *= -1.0
         p[om:om+nrangeC] = p[rangeC]
         p[om:om+nrangeC] *= -1.0
@@ -424,7 +413,6 @@ class SlackNLP( MFModel ):
         vmp[rangeC] -= v[om:]
 
         p[:on] = nlp.jtprod(x[:on], vmp)
-        nlp.JTprod += 1
 
         # Insert contribution of slacks on general constraints
         bot = on;       p[on:on+nlowerC]    = -v[lowerC]
