@@ -8,12 +8,10 @@ from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework, \
                                           AugmentedLagrangianLbfgsFramework, \
                                           AugmentedLagrangianLsr1Framework
 from nlpy.tools.timing import cputime
+from nlpy.tools.logs import config_logger
 from optparse import OptionParser
 import numpy
-import nlpy.tools.logs
 import sys, logging, os
-import threading
-import subprocess
 import signal
 from contextlib import contextmanager
 
@@ -74,8 +72,8 @@ parser.add_option("-s", "--magic_steps", action="store", type="string",
                   default=None, dest="magic_steps",
                   help="Enable magical steps (None, 'cons': for conservative, or \
                         'agg': for aggressive)")
-parser.add_option("-m", "--monotone", action="store_false",
-                  default=True, dest="monotone",
+parser.add_option("-m", "--monotone", action="store_true",
+                  default=False, dest="monotone",
                   help="Enable non monotone strategy")
 parser.add_option("-y", "--nocedal_yuan", action="store_true",
                   default=False, dest="ny",
@@ -116,41 +114,53 @@ opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
 opts['maxtime'] = options.maxtime
 
- # Create root logger.
-log = logging.getLogger('auglag2')
-log.setLevel(logging.INFO)
-fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
-
-if options.output_file is not None:
-    opts['output_file'] = options.output_file
-    hndlr = logging.FileHandler(options.output_file, mode='w')
-else:
-    hndlr = logging.StreamHandler(sys.stdout)
-hndlr.setFormatter(fmt)
-log.addHandler(hndlr)
-
 # Set printing standards for arrays
 numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
 
 multiple_problems = len(args) > 1
 error = False
+fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
+
+# Create root logger.
+nlpylogger = logging.getLogger('root')
+nlpylogger.setLevel(logging.INFO)
+hndlr = logging.StreamHandler(sys.stdout)
+hndlr.setFormatter(fmt)
+nlpylogger.addHandler(hndlr)
 
 if multiple_problems:
-    # Define formats for output table.
-    hdrfmt = '%-10s %5s %5s %5s %15s %8s %8s %8s %6s %8s'
 
-    hdr = hdrfmt % ('Name','n','m','Iter','Objective', '||c||', '||pi||', '#J.Tv', 'Time', 'Exit code')
+    nlpylogger.propagate = False
+
+    # Configure subproblem logger.
+    config_logger('nlpy.auglag',
+                filename='auglag.log',
+                filemode='w',
+                stream=None,
+                propagate=False)
+
+    # Define formats for output table.
+    hdrfmt = '%-10s %5s %5s %8s %5s %15s %8s %8s %6s %8s'
+
+    hdr = hdrfmt % ('Name', 'n', 'm', 'Hprod', 'Iter', 'Objective', '||c||',
+                    '||pi||', 'Time', 'Exit code')
     lhdr = len(hdr)
-    fmt = '%-10s %5d %5d %5d %15.8e %6.2e %6.2e %8d %6.2f %8d'
-    log.info(hdr)
-    log.info('-' * lhdr)
+    fmt = '%-10s %5d %5d %8d %5d %15.8e %6.2e %6.2e %6.2f %8d'
+    nlpylogger.info(hdr)
+    nlpylogger.info('-' * lhdr)
+
 else:
+
+    hndlr = logging.StreamHandler(sys.stdout)
+    hndlr.setFormatter(fmt)
+
     # Configure auglag logger.
-    if options.print_level >= 1:
-        auglaglogger = logging.getLogger('nlpy.auglag')
-        auglaglogger.setLevel(logging.INFO)
-        auglaglogger.addHandler(hndlr)
-        auglaglogger.propagate = False
+    auglaglogger = logging.getLogger('nlpy.auglag')
+    auglaglogger.addHandler(hndlr)
+    auglaglogger.propagate = False
+    auglaglogger.setLevel(logging.INFO)
+    if options.print_level >= 5:
+        auglaglogger.setLevel(logging.DEBUG)
 
     # Configure sbmin logger.
     if options.print_level >= 2:
@@ -158,6 +168,9 @@ else:
         sbminlogger.setLevel(logging.INFO)
         sbminlogger.addHandler(hndlr)
         sbminlogger.propagate = False
+        if options.print_level >= 5:
+            sbminlogger.setLevel(logging.DEBUG)
+
 
     # Configure bqp logger.
     if options.print_level >= 3:
@@ -165,52 +178,69 @@ else:
         bqplogger.setLevel(logging.DEBUG)
         bqplogger.addHandler(hndlr)
         bqplogger.propagate = False
+        if options.print_level >= 5:
+            bqplogger.setLevel(logging.DEBUG)
+
 
     # Configure pcg logger
     if options.print_level >= 4:
         pcglogger = logging.getLogger('nlpy.pcg')
         pcglogger.setLevel(logging.DEBUG)
         pcglogger.addHandler(hndlr)
-        pcglogger.propagate = False 
+        pcglogger.propagate = False
+        if options.print_level >= 5:
+            pcglogger.setLevel(logging.DEBUG)
+
+#def apply_scaling(nlp):
+#    gNorm = nlp.compute_scaling_obj()
 
 
 # Solve each problem in turn.
 for ProblemName in args:
 
     nlp = MFAmplModel(ProblemName)
+    #apply_scaling(nlp)
 
-    ProblemName = os.path.basename(ProblemName)
-    if ProblemName[-3:] == '.nl':
-        ProblemName = ProblemName[:-3]
+    msg = 'You are trying to solve an unconstrained problem\n'
+    msg += ' '*25+'with auglag2, you could have better results using\n'
+    msg +=' '*25+'an unconstrained solver such as sbmin.'
+    if nlp.m == 0:
+        nlpylogger.warning(msg)
+
     t = cputime()
-    t_setup, auglag = pass_to_auglag(nlp, **opts)
+    t_setup, AUGLAG = pass_to_auglag(nlp, **opts)
     total_time = cputime() - t
+
     if multiple_problems:
         if nlp.m == 0:
-            auglag.cons_max = auglag.pi_max = 0
+            AUGLAG.pi_max = AUGLAG.cons_max = 0
 
-        log.info(fmt % (ProblemName, nlp.n, nlp.m, auglag.niter_total, auglag.f,
-                        auglag.cons_max, auglag.pi_max,
-                        auglag.alprob.nlp.nlp.Hprod,
-                        total_time, auglag.status))
+        problemName = os.path.splitext(os.path.basename(ProblemName))[0] 
+        nlpylogger.info(fmt % (problemName, nlp.n, nlp.m, AUGLAG.alprob.nlp.nlp.Hprod,
+                        AUGLAG.niter_total, AUGLAG.f, AUGLAG.cons_max,
+                        AUGLAG.pi_max, total_time, AUGLAG.status))
 
     nlp.close()  # Close model.
 
 if not multiple_problems and not error:
     # Output final statistics
-    log.info('--------------------------------')
-    log.info('Auglag: End of Execution')
-    log.info('  Problem                      : %-s' % ProblemName)
-    log.info('  Number of variables          : %-d' % nlp.n)
-    log.info('  Number of linear constraints : %-d' % nlp.nlin)
-    log.info('  Number of general constraints: %-d' % (nlp.m - nlp.nlin))
-    log.info('  Initial/Final Objective      : %-g/%-g' % (auglag.f0, auglag.f))
-    log.info('  Number of iterations         : %-d' % auglag.niter_total)
-    log.info('  Number of function evals     : %-d' % auglag.alprob.nlp.nlp.feval)
-    log.info('  Number of Jacobian matvecs   : %-d' % auglag.alprob.nlp.nlp.Jprod)
-    log.info('  Number of Jacobian.T matvecs : %-d' % auglag.alprob.nlp.nlp.JTprod)
-    log.info('  Number of Hessian matvecs    : %-d' % auglag.alprob.nlp.nlp.Hprod)
-    log.info('  Setup/Solve time             : %-gs/%-gs' % (t_setup, auglag.tsolve))
-    log.info('  Total time                   : %-gs' % (total_time))
-    log.info('  Status                       : %-gs' % auglag.status)
-    log.info('--------------------------------')
+    auglaglogger.info('')
+    auglaglogger.info('Final variables: %-s' % repr(AUGLAG.x))
+    auglaglogger.info('')
+    auglaglogger.info('--------------------------------')
+    auglaglogger.info('Auglag: End of Execution')
+    auglaglogger.info('  Problem                               : %-s' % ProblemName)
+    auglaglogger.info('  Number of variables                   : %-d' % nlp.n)
+    auglaglogger.info('  Number of linear constraints          : %-d' % nlp.nlin)
+    auglaglogger.info('  Number of general constraints         : %-d' % (nlp.m - nlp.nlin))
+    auglaglogger.info('  Initial/Final Objective               : %-g/%-g' % (AUGLAG.f0, AUGLAG.f))
+    auglaglogger.info('  Initial/Final Projected Gradient Norm : %-g/%-g' % (AUGLAG.pg0, AUGLAG.pgnorm))
+    auglaglogger.info('  Number of iterations         : %-d' % AUGLAG.niter_total)
+    auglaglogger.info('  Number of function evals     : %-d' % AUGLAG.alprob.nlp.nlp.feval)
+    auglaglogger.info('  Number of Jacobian matvecs   : %-d' % AUGLAG.alprob.nlp.nlp.Jprod)
+    auglaglogger.info('  Number of Jacobian.T matvecs : %-d' % AUGLAG.alprob.nlp.nlp.JTprod)
+    auglaglogger.info('  Number of Hessian matvecs    : %-d' % AUGLAG.alprob.nlp.nlp.Hprod)
+    auglaglogger.info('  Setup/Solve time             : %-gs/%-gs' % (t_setup, AUGLAG.tsolve))
+    auglaglogger.info('  Total time                   : %-gs' % (total_time))
+    auglaglogger.info('  Status                       : %-g' % AUGLAG.status)
+    auglaglogger.info('--------------------------------')
