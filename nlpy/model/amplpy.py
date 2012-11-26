@@ -9,7 +9,7 @@ import numpy as np
 from nlpy.model.nlp import NLPModel, KKTresidual
 from nlpy.model import _amplpy
 from pysparse.sparse.pysparseMatrix import PysparseMatrix as sp
-from nlpy.krylov.linop import PysparseLinearOperator
+from nlpy.krylov.linop import SimpleLinearOperator, PysparseLinearOperator
 from nlpy.tools import sparse_vector_class as sv
 from pysparse import spmatrix
 import tempfile, os
@@ -1280,7 +1280,5 @@ class MFAmplModel(AmplModel):
 
 
     def hess(self, x, z=None, **kwargs):
-        a = self.grad(x)
-        #a = self.hprod(x,None, np.zeros(self.n))
         return SimpleLinearOperator(self.n, self.n, symmetric=True,
                          matvec=lambda u: self.hprod(x,z,u))
