@@ -4,7 +4,7 @@ from nlpy import __version__
 from nlpy.model import amplpy
 from nlpy.optimize.tr.trustregion import TrustRegionFramework as TR
 from nlpy.optimize.tr.trustregion import TrustRegionBQP as TRSolver
-from nlpy.optimize.solvers.sbmin import SBMINFramework
+from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINLqnFramework
 from nlpy.tools.timing import cputime
 from nlpy.tools.logs import config_logger
 import logging
@@ -19,10 +19,15 @@ def pass_to_sbmin(nlp, **kwargs):
     if nlp.m > 0:         # Check for constrained problem
         sys.stderr.write('%s has %d general constraints\n' % (ProblemName, nlp.m))
         return None
+    qn = kwargs.get('quasi_newton', None)
 
     t = cputime()
     tr = TR(eta1=1.0e-4, eta2=0.9, gamma1=0.3, gamma2=2.5)
-    sbmin = SBMINFramework(nlp, tr, TRSolver, **kwargs)
+    if qn == None:
+        sbmin = SBMINFramework(nlp, tr, TRSolver, **kwargs)
+    else:
+        sbmin = SBMINLqnFramework(nlp, tr, TRSolver, **kwargs)
+
     t_setup = cputime() - t                  # Setup time
     sbmin.Solve()
     return (t_setup, sbmin)
@@ -56,8 +61,12 @@ parser.add_option("-p", "--print_level", action="store", type="int",
 parser.add_option("-r", "--plot_radi", action="store_true",
                   default=False, dest="plot_radi",
                   help="Plot the evolution of the trust-region radius")
+parser.add_option("-q", "--quasi_newton", action="store", type="string",
+                  default=None, dest="quasi_newton",
+                  help="LBFGS or LSR1")
 
-# Parse command-line options
+
+# Parse command-line options:
 (options, args) = parser.parse_args()
 
 # Translate options to input arguments.
@@ -73,6 +82,7 @@ opts['ny'] = options.ny
 opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
 opts['plot_radi'] = options.plot_radi
+opts['quasi_newton'] = options.quasi_newton
 
 # Set printing standards for arrays
 np.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
@@ -143,13 +153,13 @@ else:
 def apply_scaling(nlp):
     "Apply scaling to the NLP and print something if asked."
     gNorm = nlp.compute_scaling_obj()
-    #sbminlogger.info('%17s: %8s %8s' % ('Scaling applied', 'g unscaled', '|g| scaled'))
-    #sbminlogger.info('%17s: %8.1e %8.1e'     % ('  objective', gNorm, nlp.scale_obj * gNorm))
+    # sbminlogger.info('%17s: %8s %8s' % ('Scaling applied', 'g unscaled', '|g| scaled'))
+    # sbminlogger.info('%17s: %8.1e %8.1e'     % ('  objective', gNorm, nlp.scale_obj * gNorm))
 
 # Solve each problem in turn.
 for ProblemName in args:
     nlp = amplpy.MFAmplModel(ProblemName)         # Create a model
-    apply_scaling(nlp)
+    #apply_scaling(nlp)
 
     t = cputime()
     t_setup, SBMIN = pass_to_sbmin(nlp, **opts)
