@@ -3,7 +3,8 @@
 SBMIN
 A Trust-Region Method for Bound-Constrained Optimization.
 """
-
+from nlpy.optimize.solvers.lbfgs import LBFGS
+from nlpy.optimize.solvers.lsr1 import LSR1
 from nlpy.tools.norms import norm_infty
 from nlpy.tools.timing import cputime
 from nlpy.tools.exceptions import UserExitRequest
@@ -91,8 +92,8 @@ class SBMINFramework(object):
         self.monotone = kwargs.get('monotone', False)
         self.nIterNonMono = kwargs.get('nIterNonMono', 25)
 
-        self.abstol  = kwargs.get('abstol', 1.0e-8)
-        self.reltol  = kwargs.get('reltol', 1.0e-5)
+        self.abstol  = kwargs.get('abstol', 1.0e-7)
+        self.reltol  = kwargs.get('reltol', 1.0e-7)
         self.maxiter = kwargs.get('maxiter', max(100, 10*self.nlp.n))
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
@@ -113,12 +114,12 @@ class SBMINFramework(object):
         if not self.verbose:
             self.log.propagate = False
 
-    def hprod(self, v, **kwargs):
+    def hprod(self, x , z, v, **kwargs):
         """
         Default hprod based on nlp's hprod. User should overload to
         provide a custom routine, e.g., a quasi-Newton approximation.
         """
-        return self.nlp.hprod(self.x, self.nlp.pi0, v)
+        return self.nlp.hprod(x, z, v)
 
     def project(self, x):
         "Project x into the bounds."
@@ -145,6 +146,7 @@ class SBMINFramework(object):
 
         # Gather initial information.
         self.x = self.project(self.x0)
+        self.x_old = self.x.copy()
 
         if self.f0 is None:
             self.f0 = nlp.obj(self.x)
@@ -156,12 +158,12 @@ class SBMINFramework(object):
         self.pgnorm = norm_infty(self.projected_gradient(self.x, self.g))
         self.pg0 = self.pgnorm
 
-        if self.lg_old is None and self.save_lg:
-            self.lg_old = self.nlp.lgrad(self.x)
+        if self.save_lg:
+            if self.lg_old is None:
+                self.lg_old = self.nlp.lgrad(self.x)
+            self.lg = self.lg_old.copy()
 
         self.f  = self.f0
-        #self.g  = self.g_old
-        #self.lg = self.lg_old
 
         # Reset initial trust-region radius.
         self.TR.Delta = np.maximum(0.1 * self.pgnorm, .2)
@@ -174,7 +176,7 @@ class SBMINFramework(object):
             l = 0
             sigRef = sigCan = 0
 
-        cgtol = 1.0
+        bqptol = 1.0
         stoptol = self.reltol * self.pg0 + self.abstol
         step_status = None
         exitIter = exitUser = exitTR = False
@@ -205,12 +207,12 @@ class SBMINFramework(object):
             # Iteratively minimize the quadratic model in the trust region
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
-            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, gk=self.g)
+            qp = TrustBQPModel(nlp, self.x, self.TR.Delta, self.hprod, gk=self.g)
 
-            cgtol = max(1.0e-6, min(0.5 * cgtol, sqrt(self.pgnorm)))
+            bqptol = max(1.0e-6, min(0.5 * bqptol, sqrt(self.pgnorm)))
 
             self.solver = self.TrSolver(qp, qp.grad)
-            self.solver.Solve(reltol=cgtol)
+            self.solver.Solve(reltol=bqptol)
 
             step = self.solver.step
             self.true_step = self.solver.step.copy()
@@ -335,9 +337,14 @@ class SBMINFramework(object):
                     # Trust-region step is unsuccessful
                     self.TR.UpdateRadius(rho, stepnorm)
 
+
+
             self.step_status = step_status
             self.radii.append(self.TR.Delta)
             status = ''
+
+            self.true_step = self.x - self.x_old
+
             try:
                 self.PostIteration()
             except UserExitRequest:
@@ -385,8 +392,13 @@ class SBMINLqnFramework(SBMINFramework):
 
     def __init__(self, nlp, TR, TrSolver, **kwargs):
 
+        qn = kwargs.get('quasi_newton','LBFGS')
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
+        self.lbfgs = eval(qn+'(nlp.n, npairs=10)')
         self.save_g = True
+
+    def hprod(self, x, z, v, **kwargs):
+        return self.lbfgs.matvec(v)
 
     def PostIteration(self, **kwargs):
         """
@@ -395,10 +407,10 @@ class SBMINLqnFramework(SBMINFramework):
         if all the memory has been used.
         """
         # Quasi-Newton approximation update on *successful* iterations
-        if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
-            s = self.true_step
+        if True:#self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
+            s = self.true_step.copy()
             y = self.g - self.g_old
-            self.nlp.hupdate(s, y)
+            self.lbfgs.store(s, y)
 
 
 class SBMINPartialLqnFramework(SBMINFramework):
@@ -416,6 +428,13 @@ class SBMINPartialLqnFramework(SBMINFramework):
 
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
         self.save_lg = True
+#        self.lbfgs = LBFGS(nlp.n, npairs=20)
+
+#    def hprod(self, x, z, v, **kwargs):
+#        w = self.lbfgs.matvec(v)
+#        J = self.nlp.nlp.jac(x)
+#        w += self.nlp.rho * (J.T * (J * v))
+#        return w
 
     def PostIteration(self, **kwargs):
         """
@@ -427,8 +446,8 @@ class SBMINPartialLqnFramework(SBMINFramework):
         if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
             s = self.true_step
             y = self.lg - self.lg_old
+            #self.lbfgs.store(s, y)
             self.nlp.hupdate(s, y)
-
 
 class TrustBQPModel(NLPModel):
     """
@@ -441,7 +460,7 @@ class TrustBQPModel(NLPModel):
     and `H` is  the Hessian evaluated at xk.
     """
 
-    def __init__(self, nlp, xk, delta, **kwargs):
+    def __init__(self, nlp, xk, delta, hprod, **kwargs):
 
         Lvar = np.maximum(nlp.Lvar - xk, -delta)
         Uvar = np.minimum(nlp.Uvar - xk, delta)
@@ -459,13 +478,14 @@ class TrustBQPModel(NLPModel):
         # private values
         self._x = np.infty * np.ones(self.nlp.n)
         self._Hx = None
+        self._hprod = hprod
 
     def obj(self, x, **kwargs):
         if not (self._x == x).all():
             self._x = x.copy()
             self._Hx = None
         if self._Hx == None:
-            self._Hx = self.nlp.hprod(self.xk, None, x)
+            self._Hx = self._hprod(self.xk, None, x)
 
         Hx = self._Hx.copy()
         Hx *= 0.5
@@ -477,14 +497,14 @@ class TrustBQPModel(NLPModel):
             self._x = x.copy()
             self._Hx = None
         if self._Hx == None:
-            self._Hx = self.nlp.hprod(self.xk, None, x)
+            self._Hx = self._hprod(self.xk, None, x)
 
         g = self._Hx.copy()
         g += self.gk
         return g
 
     def objgrad(self, x, **kwargs):
-        Hx = self.nlp.hprod(self.xk, None, x)
+        Hx = self._hprod(self.xk, None, x)
         g = self.gk + Hx
         Hx *= 0.5
         Hx += self.gk
@@ -492,4 +512,4 @@ class TrustBQPModel(NLPModel):
         return (q, g)
 
     def hprod(self, x, pi, p, **kwargs):
-        return self.nlp.hprod(self.xk, None, p)
+        return self._hprod(self.xk, None, p)
