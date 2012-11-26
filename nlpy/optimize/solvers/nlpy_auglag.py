@@ -3,9 +3,9 @@
 from __future__ import with_statement # Required in 2.5
 from nlpy import __version__
 from nlpy.model import MFAmplModel
-from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINLqnFramework
+from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINLqnFramework, SBMINPartialLqnFramework
 from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework, \
-                                          AugmentedLagrangianLbfgsFramework, \
+                                          AugmentedLagrangianPartialLbfgsFramework, \
                                           AugmentedLagrangianLsr1Framework
 from nlpy.tools.timing import cputime
 from nlpy.tools.logs import config_logger
@@ -41,7 +41,7 @@ def pass_to_auglag(nlp, **kwargs):
         auglag = AugmentedLagrangianFramework(nlp, SBMINFramework,
                     **kwargs)
     elif qn == 'LBFGS':
-        auglag = AugmentedLagrangianLbfgsFramework(nlp, SBMINLqnFramework,
+        auglag = AugmentedLagrangianPartialLbfgsFramework(nlp, SBMINPartialLqnFramework,
                     **kwargs)
     elif qn == 'LSR1':
         auglag = AugmentedLagrangianLsr1Framework(nlp, SBMINLqnFramework,
