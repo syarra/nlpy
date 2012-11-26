@@ -10,8 +10,6 @@ definitions.
 # Standard Python modules
 # =============================================================================
 import os, sys
-import pdb
-import copy
 
 # =============================================================================
 # External Python modules
@@ -109,7 +107,6 @@ class AugmentedLagrangian(NLPModel):
         '''
         nlp = self.nlp
         J = nlp.jac(x)
-        cons = nlp.cons(x)
         lgrad = nlp.grad(x) - J.T * self.pi
         return lgrad
     # end def
