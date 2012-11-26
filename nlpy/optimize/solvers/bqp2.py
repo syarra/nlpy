@@ -159,11 +159,6 @@ class BQP(object):
         bound constraints.
         """
         if np.any((x < self.Lvar) | (x > self.Uvar)):
-            out = where((x < self.Lvar) | (x > self.Uvar))
-            print 'Lvar = ', self.Lvar[out]
-            print 'x    = ', x[out]
-            print 'Uvar = ', self.Uvar[out]
-            pdb.set_trace()
             raise InfeasibleError
         return None
 
@@ -413,8 +408,8 @@ class BQP(object):
         qp = self.qp
         n = qp.n
         maxiter = kwargs.get('maxiter', 10 * n)
-        abstol = kwargs.get('abstol', 1.0e-8)
-        reltol = kwargs.get('reltol', 1.0e-5)
+        abstol = kwargs.get('abstol', 1.0e-7)
+        reltol = kwargs.get('reltol', 1.0e-7)
 
         # Compute initial data.
 
