@@ -407,9 +407,9 @@ class BQP(object):
         # Shortcuts for convenience.
         qp = self.qp
         n = qp.n
-        maxiter = kwargs.get('maxiter', 10 * n)
+        maxiter = kwargs.get('maxiter', 20 * n)
         abstol = kwargs.get('abstol', 1.0e-7)
-        reltol = kwargs.get('reltol', 1.0e-7)
+        reltol = kwargs.get('reltol', 1.0e-5)
 
         # Compute initial data.
 
@@ -427,7 +427,7 @@ class BQP(object):
         stoptol = reltol * pgNorm + abstol
         self.log.debug('Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm))
 
-        exitOptimal = exitIter = False
+        exitStalling = exitOptimal = exitIter = False
 
         # Print out header and initial log.
         self.log.info(self.hline)
@@ -435,8 +435,8 @@ class BQP(object):
         self.log.info(self.hline)
         self.log.info(self.format0 % (iter, 0.0, pgNorm, ''))
 
-        while not (exitOptimal or exitIter):
-
+        while not (exitOptimal or exitIter or exitStalling):
+            x_old = x.copy()
             iter += 1
             if iter >= maxiter:
                 exitIter = True
@@ -461,7 +461,10 @@ class BQP(object):
             # Conjugate gradient phase: explore current face.
 
             # 1. Obtain indices of the free variables.
-            fixed_vars = np.concatenate((lower, upper))
+            #fixed_vars = np.concatenate((lower, upper))
+            on_bound = np.concatenate((lower,upper))
+            zero_grad = where(pg == 0.)
+            fixed_vars = np.intersect1d(on_bound,zero_grad)
             free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
 
             # 2. Construct reduced QP.
@@ -526,7 +529,10 @@ class BQP(object):
                 # by instantiating a new CG object.
                 self.log.debug('Active set = binding set. Continuing CG.')
 
-                fixed_vars = np.concatenate((lower, upper))
+                on_bound = np.concatenate((lower,upper))
+                zero_grad = where(pg == 0.)
+                fixed_vars = np.intersect1d(on_bound,zero_grad)
+                #fixed_vars = np.concatenate((lower, upper))
                 free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
                 ZHZ = ReducedHessian(self.H, free_vars)
                 Zg  = g[free_vars]
@@ -567,6 +573,7 @@ class BQP(object):
                     self.log.debug('Exiting because residual is small')
                     exitOptimal = True
 
+            exitStalling = (np.linalg.norm(x-x_old)) <= 1e-18
             self.log.info(self.format % (iter, qval,
                           pgNorm, cg.niter))
 
