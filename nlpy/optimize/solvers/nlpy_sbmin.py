@@ -159,7 +159,7 @@ def apply_scaling(nlp):
 # Solve each problem in turn.
 for ProblemName in args:
     nlp = amplpy.MFAmplModel(ProblemName)         # Create a model
-    #apply_scaling(nlp)
+    apply_scaling(nlp)
 
     t = cputime()
     t_setup, SBMIN = pass_to_sbmin(nlp, **opts)
