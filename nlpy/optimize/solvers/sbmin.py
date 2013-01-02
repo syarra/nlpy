@@ -15,7 +15,6 @@ from nlpy.model import NLPModel
 
 __docformat__ = 'restructuredtext'
 
-
 class SBMINFramework(object):
     """
     An abstract framework for a trust-region-based algorithm for the nonlinear
@@ -93,18 +92,18 @@ class SBMINFramework(object):
         self.nIterNonMono = kwargs.get('nIterNonMono', 25)
 
         self.abstol  = kwargs.get('abstol', 1.0e-7)
-        self.reltol  = kwargs.get('reltol', 1.0e-7)
+        self.reltol  = kwargs.get('reltol', 1.0e-5)
         self.maxiter = kwargs.get('maxiter', max(100, 10*self.nlp.n))
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
 
-        self.hformat = '%-5s  %9s  %7s  %5s  %8s  %8s  %4s'
-        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|','bqp',
+        self.hformat = '%-5s  %9s  %7s %7s %5s  %8s  %8s  %4s'
+        self.header  = self.hformat % ('     Iter','f(x)','|g(x)|', 'step', 'bqp',
                                        'rho','Radius','Stat')
         self.hlen   = len(self.header)
         self.hline  = '     ' + '-' * self.hlen
-        self.format = '     %-5d  %9.2e  %7.1e  %5d  %8.1e  %8.1e  %4s'
-        self.format0= '     %-5d  %9.2e  %7.1e  %5s  %8s  %8s  %4s'
+        self.format = '     %-5d  %9.2e  %7.1e %7.1e %5d  %8.1e  %8.1e  %4s'
+        self.format0= '     %-5d  %9.2e  %7.1e %7s %5s  %8s  %8s  %4s'
         self.radii = None
 
         # Setup the logger. Install a NullHandler if no output needed.
@@ -188,7 +187,7 @@ class SBMINFramework(object):
         self.log.info(self.header)
         self.log.info(self.hline)
         self.log.info(self.format0 % (self.iter, self.f,
-                                             self.pgnorm, '', '',
+                                             self.pgnorm, '', '', '',
                                              '', ''))
 
         t = cputime()
@@ -196,7 +195,7 @@ class SBMINFramework(object):
         while not (exitUser or exitOptimal or exitIter or exitTR):
 
             self.iter += 1
-
+            self.x_old = self.x.copy()
             # Save current gradient for quasi-Newton approximation
             if self.save_g:
                 self.g_old = self.g.copy()
@@ -209,7 +208,7 @@ class SBMINFramework(object):
             #     s.t.     ll <= d <= uu
             qp = TrustBQPModel(nlp, self.x, self.TR.Delta, self.hprod, gk=self.g)
 
-            bqptol = max(1.0e-6, min(0.5 * bqptol, sqrt(self.pgnorm)))
+            bqptol = max(1.0e-6, min(0.1 * bqptol, sqrt(self.pgnorm)))
 
             self.solver = self.TrSolver(qp, qp.grad)
             self.solver.Solve(reltol=bqptol)
@@ -344,6 +343,7 @@ class SBMINFramework(object):
             status = ''
 
             self.true_step = self.x - self.x_old
+            self.lg = nlp.lgrad(self.x)
 
             try:
                 self.PostIteration()
@@ -358,7 +358,7 @@ class SBMINFramework(object):
 
             pstatus = step_status if step_status != 'Acc' else ''
             self.log.info(self.format % (self.iter, self.f,
-                          self.pgnorm, bqpiter, rho,
+                          self.pgnorm, np.linalg.norm(self.true_step), bqpiter, rho,
                           self.radii[-2], pstatus))
 
             exitOptimal = self.pgnorm <= stoptol
@@ -394,7 +394,7 @@ class SBMINLqnFramework(SBMINFramework):
 
         qn = kwargs.get('quasi_newton','LBFGS')
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
-        self.lbfgs = eval(qn+'(nlp.n, npairs=10)')
+        self.lbfgs = eval(qn+'(nlp.n, npairs=1, scaling=True)')
         self.save_g = True
 
     def hprod(self, x, z, v, **kwargs):
@@ -407,11 +407,10 @@ class SBMINLqnFramework(SBMINFramework):
         if all the memory has been used.
         """
         # Quasi-Newton approximation update on *successful* iterations
-        if True:#self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
+        if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
             s = self.true_step.copy()
             y = self.g - self.g_old
             self.lbfgs.store(s, y)
-
 
 class SBMINPartialLqnFramework(SBMINFramework):
     """
@@ -428,13 +427,6 @@ class SBMINPartialLqnFramework(SBMINFramework):
 
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
         self.save_lg = True
-#        self.lbfgs = LBFGS(nlp.n, npairs=20)
-
-#    def hprod(self, x, z, v, **kwargs):
-#        w = self.lbfgs.matvec(v)
-#        J = self.nlp.nlp.jac(x)
-#        w += self.nlp.rho * (J.T * (J * v))
-#        return w
 
     def PostIteration(self, **kwargs):
         """
@@ -444,9 +436,8 @@ class SBMINPartialLqnFramework(SBMINFramework):
         """
         # Quasi-Newton approximation update on *successful* iterations
         if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
-            s = self.true_step
+            s = self.true_step.copy()
             y = self.lg - self.lg_old
-            #self.lbfgs.store(s, y)
             self.nlp.hupdate(s, y)
 
 class TrustBQPModel(NLPModel):
