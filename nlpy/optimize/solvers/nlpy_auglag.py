@@ -28,13 +28,9 @@ def time_limit(seconds):
     finally:
         signal.alarm(0)
 
-
-
 def pass_to_auglag(nlp, **kwargs):
 
-    verbose = (kwargs['print_level'] == 2)
     qn = kwargs.get('quasi_newton',None)
-
     t = cputime()
 
     if qn == None:
@@ -191,15 +187,15 @@ else:
         if options.print_level >= 5:
             pcglogger.setLevel(logging.DEBUG)
 
-#def apply_scaling(nlp):
-#    gNorm = nlp.compute_scaling_obj()
+def apply_scaling(nlp):
+    gNorm = nlp.compute_scaling_obj()
 
 
 # Solve each problem in turn.
 for ProblemName in args:
 
     nlp = MFAmplModel(ProblemName)
-    #apply_scaling(nlp)
+    apply_scaling(nlp)
 
     msg = 'You are trying to solve an unconstrained problem\n'
     msg += ' '*25+'with auglag2, you could have better results using\n'
