@@ -31,7 +31,7 @@ class LSR1(object):
         self.n = n
         self.npairs = npairs
         # Optional arguments
-        self.scaling = kwargs.get('scaling', False)
+        self.scaling = kwargs.get('scaling', True)
 
         # insert to points to the location where the *next* (s,y) pair
         # is to be inserted in self.s and self.y.
@@ -53,20 +53,35 @@ class LSR1(object):
     def store(self, new_s, new_y):
         """
         Store the new pair (new_s,new_y). A new pair
-        is only accepted if the dot product <new_s, new_y> is over a certain
-        threshold given by `self.accept_threshold`.
+        is only accepted if 
+        | s_k' (y_k -B_k s_k) | >= 1e-8 ||s_k|| ||y_k - B_k s_k ||.
         """
-        criterion = abs(numpy.dot(new_s, new_y - new_s))
-        ys = numpy.dot(new_s, new_y)
+        Bs = self.matvec(new_s)
+        criterion = abs(numpy.dot(new_s, new_y - Bs))
 
-        if criterion >= self.accept_threshold * numpy.linalg.norm(new_s) * numpy.linalg.norm(new_y - new_s):
+        if criterion >= self.accept_threshold * numpy.linalg.norm(new_s) * numpy.linalg.norm(new_y - Bs):
             insert = self.insert
             self.s[:,insert] = new_s.copy()
             self.y[:,insert] = new_y.copy()
-            self.ys[insert] = ys
+            self.ys[insert] = numpy.dot(new_y, new_s)
+            #print 'ys', self.ys[insert]
             self.insert += 1
             self.insert = self.insert % self.npairs
+        else:
+            print 'Skipping this pair'
         return
+
+
+    def restart(self):
+        """
+        Restart the approximation by clearing all data on past updates.
+        """
+        self.ys = [None] * self.npairs
+        self.s = numpy.empty((self.n, self.npairs), 'd')
+        self.y = numpy.empty((self.n, self.npairs), 'd')
+        self.insert = 0
+        return
+
 
     def matvec(self, v):
         """
@@ -113,13 +128,14 @@ class LSR1(object):
                         l_ind += 1
                 k_ind += 1
 
+        #print minimat
         if paircount > 0:
             rng = paircount
             b = numpy.linalg.solve(minimat[0:rng,0:rng],a[0:rng])
 
         for i in range(paircount):
             k = (self.insert - paircount + i) % self.npairs
-            q += numpy.dot(b[i],y[:,k]) - numpy.dot(b[i]/self.gamma,s[:,k])
+            q += numpy.dot(b[i],y[:,k]) - numpy.dot(b[i],s[:,k]/self.gamma)
 
         return q
 
