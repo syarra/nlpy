@@ -6,7 +6,7 @@ from nlpy.model import MFAmplModel
 from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINLqnFramework, SBMINPartialLqnFramework
 from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework, \
                                           AugmentedLagrangianPartialLbfgsFramework, \
-                                          AugmentedLagrangianLsr1Framework
+                                          AugmentedLagrangianPartialLsr1Framework
 from nlpy.tools.timing import cputime
 from nlpy.tools.logs import config_logger
 from optparse import OptionParser
@@ -40,7 +40,7 @@ def pass_to_auglag(nlp, **kwargs):
         auglag = AugmentedLagrangianPartialLbfgsFramework(nlp, SBMINPartialLqnFramework,
                     **kwargs)
     elif qn == 'LSR1':
-        auglag = AugmentedLagrangianLsr1Framework(nlp, SBMINLqnFramework,
+        auglag = AugmentedLagrangianPartialLsr1Framework(nlp, SBMINPartialLqnFramework,
                     **kwargs)
 
     t_setup = cputime() - t    # Setup time.
@@ -50,7 +50,7 @@ def pass_to_auglag(nlp, **kwargs):
             auglag.solve(**kwargs)
     except TimeoutException, msg:
         print "Timed out!"
-        auglag.status=5
+        auglag.status=-5
         auglag.tsolve=0
         auglag.cons_max=0
         auglag.pi_max=0
@@ -195,7 +195,7 @@ def apply_scaling(nlp):
 for ProblemName in args:
 
     nlp = MFAmplModel(ProblemName)
-    apply_scaling(nlp)
+    #apply_scaling(nlp)
 
     msg = 'You are trying to solve an unconstrained problem\n'
     msg += ' '*25+'with auglag2, you could have better results using\n'
@@ -210,6 +210,10 @@ for ProblemName in args:
     if multiple_problems:
         if nlp.m == 0:
             AUGLAG.pi_max = AUGLAG.cons_max = 0
+
+        if AUGLAG.status != 0:
+            AUGLAG.niter_total = - AUGLAG.niter_total
+            total_time = -total_time
 
         problemName = os.path.splitext(os.path.basename(ProblemName))[0] 
         nlpylogger.info(fmt % (problemName, nlp.n, nlp.m, AUGLAG.alprob.nlp.nlp.Hprod,
