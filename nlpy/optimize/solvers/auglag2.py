@@ -78,7 +78,7 @@ class AugmentedLagrangian(NLPModel):
         algrad = nlp.grad(x) + J.T * ( -self.pi + self.rho * cons)
         return algrad
 
-    def lgrad(self, x, **kwargs):
+    def dual_feasibility(self, x, **kwargs):
         """
         Evaluate Lagrangian gradient.
         """
@@ -86,92 +86,6 @@ class AugmentedLagrangian(NLPModel):
         J = nlp.jac(x)
         lgrad = nlp.grad(x) - J.T * self.pi
         return lgrad
-
-    def project_x(self, x, **kwargs):
-        """
-        Project the given x vector on to the bound-constrained space and 
-        return the result. This function is useful when the starting point 
-        of the optimization is not initially within the bounds.
-        """
-        return np.maximum(np.minimum(x,self.Uvar),self.Lvar)
-
-
-    def project_gradient(self, x, g, **kwargs):
-        """
-        Project the provided gradient on to the bound-constrained space and
-        return the result. This is a helper function for determining
-        optimality conditions of the original NLP.
-        """
-        p = x - g
-        med = np.maximum(np.minimum(p,self.Uvar),self.Lvar)
-        q = x - med
-
-        return q
-
-
-    def magical_step(self, x, g, **kwargs):
-        """
-        Compute a "magical step" to improve the convergence rate of the 
-        inner minimization algorithm. This step minimizes the augmented 
-        Lagrangian with respect to the slack variables only for a fixed set 
-        of decision variables.
-        """
-
-        on = self.nlp.original_n
-        m_step = np.zeros(self.n)
-        m_step[on:] = -g[on:]/self.rho
-        # Assuming slack variables are restricted to [0,+inf) interval
-        m_step[on:] = np.where(-m_step[on:] > x[on:], -x[on:], m_step[on:])
-
-        return m_step
-
-
-    def get_active_bounds(self, x):
-        """
-        Returns a list containing the indices of variables that are at 
-        either their lower or upper bound.
-        """
-        lower_active = where(x==self.Lvar)
-        upper_active = where(x==self.Uvar)
-        active_bound = np.concatenate((lower_active,upper_active))
-        return active_bound
-
-
-    def lsqr_multipliers(self, x, **kwargs):
-        """
-        Compute a least-squares estimate of the Lagrange multipliers for the 
-        current point. This may lead to faster convergence of the augmented 
-        Lagrangian algorithm, at the expense of more Jacobian-vector products.
-        """
-        nlp = self.nlp
-        m = nlp.m
-        n = nlp.n
-        full_mult = kwargs.get('full_mult',False)
-
-        lim = max(2*m,2*n)
-        J = nlp.jac(x)
-
-        # Determine which bounds are active to remove appropriate columns of J
-        on_bound = self.get_active_bounds(x)
-        not_on_bound = np.setdiff1d(np.arange(n, dtype=np.int), on_bound)
-        Jred = ReducedLinearOperator(J, np.arange(m, dtype=np.int), 
-            not_on_bound)
-
-        if full_mult:
-            g = nlp.grad(x)
-        else:
-            g = self.lgrad(x)
-
-        # Call LSQR method
-        lsqr = LSQRFramework(Jred.T)
-        lsqr.solve(g[not_on_bound], itnlim=lim)
-        if lsqr.optimal:
-            if full_mult:
-                self.pi = lsqr.x.copy()
-            else:
-                self.pi += lsqr.x
-
-        return
 
 
     def hprod(self, x, z, v, **kwargs):
@@ -184,8 +98,6 @@ class AugmentedLagrangian(NLPModel):
         om = nlp.original_m
         upperC = nlp.upperC ; nupperC = nlp.nupperC
         rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
-
-
         w = np.zeros(self.n)
 
         pi_bar = self.pi[:om].copy()
@@ -208,14 +120,13 @@ class AugmentedLagrangian(NLPModel):
                                     matvec= lambda u: self.hprod(x,z,u))
 
 
-class AugmentedLagrangianLbfgs(AugmentedLagrangian):
+class AugmentedLagrangianQuasiNewton(AugmentedLagrangian):
     """
-    Use LBFGS approximate Hessian instead of true Hessian.
+    Use Quasi Newton approximate Hessian instead of true Hessian.
     """
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangian.__init__(self, nlp, **kwargs)
-        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',1), scaling=True, **kwargs)
 
     def hprod(self, x, z, v, **kwargs):
         """
@@ -230,18 +141,40 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangian):
             self.Hessapp.store(new_s,new_y)
         return
 
-    def hrestart(self):
+    def hreset(self):
         self.Hessapp.restart()
         return
 
 
-class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianLbfgs):
+class AugmentedLagrangianLbfgs(AugmentedLagrangianQuasiNewton):
     """
-    Only apply the LBFGS approximation to the second order terms of the 
+    Use LBFGS approximate Hessian instead of true Hessian.
+    """
+
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangianQuasiNewton.__init__(self, nlp, **kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',1), scaling=True, **kwargs)
+
+
+
+class AugmentedLagrangianLsr1(AugmentedLagrangianQuasiNewton):
+    """
+    Use an LSR1 approximation instead of the LBFGS approximation.
+    """
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangianQuasiNewton.__init__(self, nlp, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',1), **kwargs)
+
+
+
+class AugmentedLagrangianPartialQuasiNewton(AugmentedLagrangianQuasiNewton):
+    """
+    Only apply the Quasi Newton approximation to the second order terms of the 
     Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
     """
     def __init__(self, nlp, **kwargs):
-        AugmentedLagrangianLbfgs.__init__(self, nlp, **kwargs)
+        AugmentedLagrangianQuasiNewton.__init__(self, nlp, **kwargs)
+
 
     def hprod(self, x, z, v, **kwargs):
         w = self.Hessapp.matvec(v)
@@ -250,14 +183,26 @@ class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianLbfgs):
         return w
 
 
-class AugmentedLagrangianLsr1(AugmentedLagrangianLbfgs):
-    """
-    Use an LSR1 approximation instead of the LBFGS approximation.
-    """
 
+class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianPartialQuasiNewton):
+    """
+    Only apply the LBFGS approximation to the second order terms of the 
+    Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
+    """
     def __init__(self, nlp, **kwargs):
-        AugmentedLagrangian.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',5), **kwargs)
+        AugmentedLagrangianPartialQuasiNewton.__init__(self, nlp, **kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',1), scaling=True, **kwargs)
+
+
+
+class AugmentedLagrangianPartialLsr1(AugmentedLagrangianPartialQuasiNewton):
+    """
+    Only apply the LSR1 approximation to the second order terms of the 
+    Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
+    """
+    def __init__(self, nlp, **kwargs):
+        AugmentedLagrangianPartialQuasiNewton.__init__(self, nlp, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',5), scaling=False, **kwargs)
 
 
 
@@ -302,12 +247,11 @@ class AugmentedLagrangianFramework(object):
     where ``g0`` is the infinity norm of the projected gradient of the Lagrangian
     at the initial point.
 
-    :exit codes:
+    :Exit codes:
         :0:    Optimal solution found
-        :1:    Problem is infeasible
-        :2:    Maximum iteration reached
-        :3:    Not making any more progress
-
+        :-1:   Maximum iteration reached
+        :-2:   Not making sufficient progress
+        :-5:   Time limit exceeded
 
     References
     ----------
@@ -320,7 +264,6 @@ class AugmentedLagrangianFramework(object):
     """
 
     def __init__(self, nlp, innerSolver, **kwargs):
-
         """
         Initialize augmented Lagrangian method and options.
         Any options that are not used here are passed on into the bound-
@@ -330,7 +273,7 @@ class AugmentedLagrangianFramework(object):
         self.alprob = AugmentedLagrangian(nlp,**kwargs)
         self.x = kwargs.get('x0', self.alprob.x0.copy())
 
-        self.least_squares_pi = kwargs.get('least_squares_pi',False)
+        self.least_squares_pi = kwargs.get('least_squares_pi', False)
 
         self.innerSolver = innerSolver
 
@@ -352,10 +295,8 @@ class AugmentedLagrangianFramework(object):
 
         self.f0 = self.f = None
 
-        # Maximum number of outer iterations 
-        # (use 'maxiter' or 'maxinner' keyword for TR)
-        self.maxouter = kwargs.get('maxouter', 10*self.alprob.nlp.original_n)
-        self.maxiter = kwargs.get('maxiter', 3000)
+        # Maximum number of iterations 
+        self.maxiter = kwargs.get('maxiter', 100*self.alprob.nlp.original_n)
 
         self.inner_fail_count = 0
         self.status = None
@@ -376,17 +317,99 @@ class AugmentedLagrangianFramework(object):
             self.log.propagate=False
 
 
-    def UpdateMultipliers(self, convals, status):
+    def project(self, x, **kwargs):
+        """
+        Project the given x vector on to the bound-constrained space and 
+        return the result. This function is useful when the starting point 
+        of the optimization is not initially within the bounds.
+        """
+        return np.maximum(np.minimum(x,self.alprob.Uvar),self.alprob.Lvar)
 
+
+    def project_gradient(self, x, g, **kwargs):
+        """
+        Project the provided gradient on to the bound-constrained space and
+        return the result. This is a helper function for determining
+        optimality conditions of the original NLP.
+        """
+        p = x - g
+        med = np.maximum(np.minimum(p,self.alprob.Uvar),self.alprob.Lvar)
+        q = x - med
+
+        return q
+
+
+    def magical_step(self, x, g, **kwargs):
+        """
+        Compute a "magical step" to improve the convergence rate of the 
+        inner minimization algorithm. This step minimizes the augmented 
+        Lagrangian with respect to the slack variables only for a fixed set 
+        of decision variables.
+        """
+        alprob = self.alprob
+        on = alprob.nlp.original_n
+        m_step = np.zeros(alprob.n)
+        m_step[on:] = -g[on:]/self.alprob.rho
+        # Assuming slack variables are restricted to [0,+inf) interval
+        m_step[on:] = np.where(-m_step[on:] > x[on:], -x[on:], m_step[on:])
+        return m_step
+
+
+    def get_active_bounds(self, x):
+        """
+        Returns a list containing the indices of variables that are at 
+        either their lower or upper bound.
+        """
+        lower_active = where(x==self.alprob.Lvar)
+        upper_active = where(x==self.alprob.Uvar)
+        active_bound = np.concatenate((lower_active,upper_active))
+        return active_bound
+
+
+    def least_squares_multipliers(self, x, **kwargs):
+        """
+        Compute a least-squares estimate of the Lagrange multipliers for the 
+        current point. This may lead to faster convergence of the augmented 
+        Lagrangian algorithm, at the expense of more Jacobian-vector products.
+        """
+        nlp = self.alprob.nlp
+        m = nlp.m
+        n = nlp.n
+        full_mult = kwargs.get('full_mult',False)
+
+        lim = max(2*m,2*n)
+        J = nlp.jac(x)
+
+        # Determine which bounds are active to remove appropriate columns of J
+        on_bound = self.get_active_bounds(x)
+        not_on_bound = np.setdiff1d(np.arange(n, dtype=np.int), on_bound)
+        Jred = ReducedLinearOperator(J, np.arange(m, dtype=np.int), 
+            not_on_bound)
+
+        if full_mult:
+            g = nlp.grad(x)
+        else:
+            g = self.dual_feasibility(x)
+
+        # Call LSQR method
+        lsqr = LSQRFramework(Jred.T)
+        lsqr.solve(g[not_on_bound], itnlim=lim)
+        if lsqr.optimal:
+            if full_mult:
+                self.pi = lsqr.x.copy()
+            else:
+                self.pi += lsqr.x
+
+        return
+
+
+    def UpdateMultipliers(self, convals, status):
         """
         Infeasibility is sufficiently small; update multipliers and
         tighten feasibility and optimality tolerances
         """
 
-        if self.least_squares_pi:
-            self.alprob.lsqr_multipliers(self.x)
-        else:
-            self.alprob.pi -= self.alprob.rho*convals
+        self.alprob.pi -= self.alprob.rho*convals
         if self.alprob.nlp.m != 0:
             self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
@@ -403,7 +426,6 @@ class AugmentedLagrangianFramework(object):
 
 
     def UpdatePenaltyParameter(self):
-
         """
         Large infeasibility; increase rho and reset tolerances
         based on new rho.
@@ -415,7 +437,6 @@ class AugmentedLagrangianFramework(object):
 
 
     def PostIteration(self, **kwargs):
-
         """
         Override this method to perform additional work at the end of a 
         major iteration. For example, use this method to restart an 
@@ -431,11 +452,11 @@ class AugmentedLagrangianFramework(object):
         original_n = self.alprob.nlp.original_n
 
         # Move starting point into the feasible box
-        self.x = self.alprob.project_x(self.x)
+        self.x = self.project(self.x)
 
         # Use a least-squares estimate of the multipliers to start (if requested)
-        if self.least_squares_pi:
-            self.alprob.lsqr_multipliers(self.x, full_mult=True)
+        if self.least_squares_pi and self.alprob.nlp.m != 0:
+            self.least_squares_multipliers(self.x, full_mult=True)
             self.log.debug('New multipliers = %g, %g' % (max(self.alprob.pi),min(self.alprob.pi)))
 
         # First augmented lagrangian gradient evaluation
@@ -443,13 +464,13 @@ class AugmentedLagrangianFramework(object):
 
         # "Smart" initialization of slack variables using the magical step 
         # function that is already available
-        m_step_init = self.alprob.magical_step(self.x, dphi)
+        m_step_init = self.magical_step(self.x, dphi)
         self.x += m_step_init
 
-        dL = self.alprob.lgrad(self.x)
+        dL = self.alprob.dual_feasibility(self.x)
         self.f = self.f0 = self.alprob.nlp.obj(self.x[:original_n])
 
-        PdL = self.alprob.project_gradient(self.x,dL)
+        PdL = self.project_gradient(self.x,dL)
         Pmax = np.max(np.abs(PdL))
         self.pg0 = Pmax
 
@@ -466,13 +487,16 @@ class AugmentedLagrangianFramework(object):
         self.omega_opt = self.omega_rel * self.pg0 + self.omega_abs
         self.eta_opt = self.eta_rel * max_cons + self.eta_abs
 
+        tr = TR(eta1=1.0e-4, eta2=.9, gamma1=.25, gamma2=2.5)
+
         self.iter = 0
         self.inner_fail_count = 0
         self.niter_total = 0
         infeas_iter = 0
 
+        exitIter = False
         # Convergence check
-        converged = Pmax <= self.omega_opt and max_cons <= self.eta_opt
+        exitOptimal = ( Pmax <= self.omega_opt and max_cons <= self.eta_opt )
 
         t = cputime()
 
@@ -484,14 +508,11 @@ class AugmentedLagrangianFramework(object):
                                              self.pg0, '', max_cons,
                                              '', self.alprob.rho,''))
 
-        while not converged and self.iter < self.maxouter \
-                            and self.niter_total < self.maxiter:
+        while not (exitOptimal or exitIter):
 
             self.iter += 1
 
             # Perform bound-constrained minimization
-            tr = TR(eta1=1.0e-4, eta2=.99, gamma1=.3, gamma2=2.5)
-
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                         reltol=self.omega, x0=self.x,
                                         verbose=True,**kwargs)
@@ -500,8 +521,8 @@ class AugmentedLagrangianFramework(object):
             self.x = SBMIN.x.copy()
             self.niter_total += SBMIN.iter
 
-            dL = self.alprob.lgrad(self.x)
-            PdL = self.alprob.project_gradient(self.x,dL)
+            dL = self.alprob.dual_feasibility(self.x)
+            PdL = self.project_gradient(self.x,dL)
             Pmax_new = np.max(np.abs(PdL))
             convals_new = self.alprob.nlp.cons(self.x)
 
@@ -530,7 +551,7 @@ class AugmentedLagrangianFramework(object):
 
                 # Update convergence check
                 if max_cons_new <= self.eta_opt and Pmax_new <= self.omega_opt:
-                    converged = True
+                    exitOptimal = True
                     break
 
                 self.UpdateMultipliers(convals_new,SBMIN.status)
@@ -541,7 +562,7 @@ class AugmentedLagrangianFramework(object):
 
                 # If optimality of the inner loop is not achieved within 10
                 # major iterations, exit immediately
-                if self.inner_fail_count == 100:
+                if self.inner_fail_count == 10:
                     self.status = 3
                     self.log.debug('Current point could not be improved, exiting ... \n')
                     break
@@ -560,7 +581,7 @@ class AugmentedLagrangianFramework(object):
                     infeas_iter = 0
 
                 if infeas_iter == 10:
-                    self.status = 1
+                    self.status = -2
                     self.log.debug('Problem appears to be infeasible, exiting ... \n')
                     break
 
@@ -574,7 +595,9 @@ class AugmentedLagrangianFramework(object):
             try:
                 self.PostIteration()
             except UserExitRequest:
-                self.status = 'usr'
+                self.status = -3
+
+            exitIter = self.niter_total > self.maxiter
 
         self.tsolve = cputime() - t    # Solve time
         if self.alprob.nlp.m != 0:
@@ -585,11 +608,11 @@ class AugmentedLagrangianFramework(object):
             self.cons_max = None
 
         # Solution output, etc.
-        if converged:
+        if exitOptimal:
             self.status = 0
             self.log.debug('Optimal solution found \n')
-        elif not converged and self.status is None:
-            self.status = 2
+        elif not exitOptimal and self.status is None:
+            self.status = -1
             self.log.debug('Maximum number of iterations reached \n')
 
         self.log.info('f = %12.8g' % self.f)
@@ -598,19 +621,37 @@ class AugmentedLagrangianFramework(object):
             self.log.info('max infeas. = %12.8g' % max_cons_new)
 
 
-class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianFramework):
+
+
+class AugmentedLagrangianQuasiNewtonFramework(AugmentedLagrangianFramework):
 
     def __init__(self,nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
-        self.alprob = AugmentedLagrangianLbfgs(nlp,**kwargs)
 
 
     def PostIteration(self, **kwargs):
         """
-        This method restarts the limited-memory BFGS Hessian. 
+        This method resets the Quasi Newton Hessian approximation.
         """
-        self.alprob.hrestart()
+        self.alprob.hreset()
         return
+
+
+
+class AugmentedLagrangianLbfgsFramework(AugmentedLagrangianQuasiNewtonFramework):
+
+    def __init__(self,nlp, innerSolver, **kwargs):
+        AugmentedLagrangianQuasiNewtonFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianLbfgs(nlp,**kwargs)
+
+
+
+class AugmentedLagrangianLsr1Framework(AugmentedLagrangianQuasiNewtonFramework):
+
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianQuasiNewtonFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianLsr1(nlp,**kwargs)
+
 
 
 class AugmentedLagrangianPartialLbfgsFramework(AugmentedLagrangianLbfgsFramework):
@@ -620,8 +661,9 @@ class AugmentedLagrangianPartialLbfgsFramework(AugmentedLagrangianLbfgsFramework
         self.alprob = AugmentedLagrangianPartialLbfgs(nlp,**kwargs)
 
 
-class AugmentedLagrangianLsr1Framework(AugmentedLagrangianLbfgsFramework):
+
+class AugmentedLagrangianPartialLsr1Framework(AugmentedLagrangianQuasiNewtonFramework):
 
     def __init__(self, nlp, innerSolver, **kwargs):
-        AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
-        self.alprob = AugmentedLagrangianLsr1(nlp,**kwargs)
+        AugmentedLagrangianQuasiNewtonFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianPartialLsr1(nlp,**kwargs)
