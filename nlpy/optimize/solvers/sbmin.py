@@ -47,9 +47,19 @@ class SBMINFramework(object):
         :verbose:      print some info if True                 (default True)
 
     Once a `SBMINFramework` object has been instantiated and the problem is
-    set up, solve problem by issuing a call to `SBMIN.solve()`. The algorithm
-    stops as soon as the infinity norm of the projected gradient into the
-    feasible box falls below `reltol`
+    set up, solve problem by issuing a call to `SBMIN.solve()`.
+
+
+    The algorithm stops as soon as one of this criteria is statisfied:
+
+        :exitOptimal:   the infinity norm of the projected gradient
+                        into the feasible box falls below `reltol`
+                        (default 1.0e-7)
+
+        :exitIter:      maximum number of iterations is reached
+                        (default max(100, 10n)
+
+        :exitTR:        trust region radius is smaller than 10*eps_mach
 
     """
 
@@ -92,7 +102,7 @@ class SBMINFramework(object):
         self.nIterNonMono = kwargs.get('nIterNonMono', 25)
 
         self.abstol  = kwargs.get('abstol', 1.0e-7)
-        self.reltol  = kwargs.get('reltol', 1.0e-5)
+        self.reltol  = kwargs.get('reltol', 1.0e-7)
         self.maxiter = kwargs.get('maxiter', max(100, 10*self.nlp.n))
         self.verbose = kwargs.get('verbose', True)
         self.total_bqpiter = 0
@@ -113,16 +123,11 @@ class SBMINFramework(object):
         if not self.verbose:
             self.log.propagate = False
 
-    def hprod(self, x , z, v, **kwargs):
-        """
-        Default hprod based on nlp's hprod. User should overload to
-        provide a custom routine, e.g., a quasi-Newton approximation.
-        """
-        return self.nlp.hprod(x, z, v)
 
     def project(self, x):
         "Project x into the bounds."
         return np.maximum(np.minimum(x, self.nlp.Uvar), self.nlp.Lvar)
+
 
     def projected_gradient(self, x, g):
         """
@@ -132,12 +137,37 @@ class SBMINFramework(object):
         """
         return x - self.project(x - g)
 
+
+    def magical_step(self, x, g, **kwargs):
+        """
+        Compute a "magical step" to improve the convergence rate of the
+        inner minimization algorithm. This step minimizes the augmented
+        Lagrangian with respect to the slack variables only for a fixed set
+        of decision variables.
+        """
+        on = self.nlp.nlp.original_n
+        m_step = np.zeros(self.nlp.n)
+        m_step[on:] = -g[on:]/self.nlp.rho
+        # Assuming slack variables are restricted to [0,+inf) interval
+        m_step[on:] = np.where(-m_step[on:] > x[on:], -x[on:], m_step[on:])
+        return m_step
+
+
+    def hprod(self, x , z, v, **kwargs):
+        """
+        Default hprod based on nlp's hprod. User should overload to
+        provide a custom routine, e.g., a quasi-Newton approximation.
+        """
+        return self.nlp.hprod(x, z, v)
+
+
     def PostIteration(self, **kwargs):
         """
         Override this method to perform work at the end of an iteration. For
         example, use this method for updating a LBFGS Hessian
         """
         return None
+
 
     def Solve(self, **kwargs):
 
@@ -159,7 +189,7 @@ class SBMINFramework(object):
 
         if self.save_lg:
             if self.lg_old is None:
-                self.lg_old = self.nlp.lgrad(self.x)
+                self.lg_old = self.nlp.dual_feasibility(self.x)
             self.lg = self.lg_old.copy()
 
         self.f  = self.f0
@@ -214,7 +244,6 @@ class SBMINFramework(object):
             self.solver.Solve(reltol=bqptol)
 
             step = self.solver.step
-            self.true_step = self.solver.step.copy()
             stepnorm = self.solver.stepNorm
             bqpiter = self.solver.niter
             # Obtain model value at next candidate
@@ -230,9 +259,8 @@ class SBMINFramework(object):
                 x_inter = x_trial.copy()
                 f_inter = f_trial
                 g_inter = nlp.grad(x_inter)
-                m_step = nlp.magical_step(x_inter, g_inter)
+                m_step = self.magical_step(x_inter, g_inter)
                 x_trial = x_inter + m_step
-                self.true_step += m_step
                 f_trial = nlp.obj(x_trial)
                 if f_trial <= f_inter:
                     # Safety check for machine-precision errors in magical step
@@ -255,15 +283,12 @@ class SBMINFramework(object):
                 self.g = nlp.grad(self.x)
 
                 if self.magic_steps_cons:
-                    m_step = nlp.magical_step(self.x, self.g)
+                    m_step = self.magical_step(self.x, self.g)
                     self.x += m_step
-                    self.true_step += m_step
                     self.f = nlp.obj(self.x)
                     self.g = nlp.grad(self.x)
 
                 self.pgnorm = norm_infty(self.projected_gradient(self.x, self.g))
-                if self.save_lg:
-                    self.lg = nlp.lgrad(self.x)
 
                 step_status = 'Acc'
 
@@ -309,23 +334,18 @@ class SBMINFramework(object):
                         step_status = 'N-Y Rej'
                     else:
                         # Backtrack succeeded, update the current point
-                        self.true_step *= alpha
                         self.x = x_trial
                         self.f = f_trial
                         self.g = nlp.grad(self.x)
 
                         # Conservative magical step if backtracking succeeds
                         if self.magic_steps_cons:
-                            m_step = nlp.magical_step(self.x, self.g)
+                            m_step = self.magical_step(self.x, self.g)
                             self.x += m_step
-                            self.true_step += m_step
                             self.f = nlp.obj(self.x)
                             self.g = nlp.grad(self.x)
 
                         self.pgnorm = norm_infty(self.projected_gradient(self.x, self.g))
-
-                        if self.save_lg:
-                            self.lg = nlp.lgrad(self.x)
 
                         step_status = 'N-Y Acc'
 
@@ -343,10 +363,12 @@ class SBMINFramework(object):
             status = ''
 
             self.true_step = self.x - self.x_old
-            self.lg = nlp.lgrad(self.x)
+            if self.save_lg:
+                self.lg = nlp.dual_feasibility(self.x)
 
             try:
                 self.PostIteration()
+                #print 'here'
             except UserExitRequest:
                 status = 'usr'
 
@@ -385,11 +407,10 @@ class SBMINLqnFramework(SBMINFramework):
     Class SBMINLqnFramework is a subclass of SBMINFramework. The method is
     based on a trust-region-based algorithm for nonlinear box constrained
     programming.
-    The only difference is that a limited-memory quasi-Newton Hessian
+    The only difference is that a limited-memory Quasi-Newton Hessian
     approximation is used and maintained along the iterations. See class
     SBMINFramework for more information.
     """
-
     def __init__(self, nlp, TR, TrSolver, **kwargs):
 
         qn = kwargs.get('quasi_newton','LBFGS')
@@ -397,8 +418,10 @@ class SBMINLqnFramework(SBMINFramework):
         self.lbfgs = eval(qn+'(nlp.n, npairs=1, scaling=True)')
         self.save_g = True
 
+
     def hprod(self, x, z, v, **kwargs):
         return self.lbfgs.matvec(v)
+
 
     def PostIteration(self, **kwargs):
         """
@@ -412,6 +435,8 @@ class SBMINLqnFramework(SBMINFramework):
             y = self.g - self.g_old
             self.lbfgs.store(s, y)
 
+
+
 class SBMINPartialLqnFramework(SBMINFramework):
     """
     Class SBMINPartialLqnFramework is a subclass of SBMINFramework. The method
@@ -422,7 +447,6 @@ class SBMINPartialLqnFramework(SBMINFramework):
     SBMINLqnFramework class, limited-memory matrix does not approximate the
     first order term in the Hessian, i.e. not the pJ'J term.
     """
-
     def __init__(self, nlp, TR, TrSolver, **kwargs):
 
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
@@ -438,7 +462,12 @@ class SBMINPartialLqnFramework(SBMINFramework):
         if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
             s = self.true_step.copy()
             y = self.lg - self.lg_old
+            #print self.x, self.x_old
+            #print 's', s
+            #print 'y', y
             self.nlp.hupdate(s, y)
+
+
 
 class TrustBQPModel(NLPModel):
     """
