@@ -43,10 +43,6 @@ where problem1 through problemN represent nonlinear programs."""
 # Define allowed command-line options
 parser = OptionParser(usage=usage_msg, version='%prog version ' + __version__)
 
-parser.add_option("-s", "--magic_steps", action="store", type="string",
-                  default=None, dest="magic_steps",
-                  help="Enable magical steps (None, 'cons': for conservative, or \
-                        'agg': for aggressive)")
 parser.add_option("-m", "--monotone", action="store_true",
                   default=False, dest="monotone",
                   help="Enable monotone strategy")
@@ -73,11 +69,6 @@ parser.add_option("-q", "--quasi_newton", action="store", type="string",
 opts = {}
 if options.maxit is not None:
     opts['maxiter'] = options.maxit
-if options.magic_steps is not None:
-    if options.magic_steps == 'agg':
-        opts['magic_steps_agg'] = True
-    elif options.magic_steps == 'cons':
-        opts['magic_steps_cons'] = True
 opts['ny'] = options.ny
 opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
