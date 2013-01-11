@@ -1,8 +1,8 @@
-'''
+"""
 mfnlp.py
 
 An abstract class of a matrix-free NLP model for NLPy.
-'''
+"""
 
 
 __docformat__ = 'restructuredtext'
@@ -27,7 +27,7 @@ from nlpy.tools import List
 
 class MFModel(NLPModel):
 
-    '''
+    """
     MFModel is a derived type of NLPModel which focuses on matrix-free
     implementations of the standard NLP.
 
@@ -35,7 +35,7 @@ class MFModel(NLPModel):
     methods and counters for Jacobian-free cases.
 
     Note: these parts could be reintegrated into NLPModel at a later date.
-    '''
+    """
 
     def __init__(self, n=0, m=0, name='Generic Matrix-Free', **kwargs):
 
@@ -57,7 +57,7 @@ class MFModel(NLPModel):
 
 
 class SlackNLP( MFModel ):
-    '''
+    """
     General framework for converting a nonlinear optimization problem to a
     form using slack variables.
 
@@ -92,7 +92,7 @@ class SlackNLP( MFModel ):
     such as the index set of constraints with an upper bound, etc., but
     rather performs the evaluations of the constraints for the updated
     model implicitly.
-    '''
+    """
 
     def __init__(self, nlp, keep_variable_bounds=False, **kwargs):
 
@@ -164,20 +164,20 @@ class SlackNLP( MFModel ):
 
 
     def InitializeSlacks(self, val=0.0, **kwargs):
-        '''
+        """
         Initialize all slack variables to given value. This method may need to
         be overridden.
-        '''
+        """
         self.x0[self.original_n:] = val
         return
 
 
     def obj(self, x):
-        '''
+        """
         Return the value of the objective function at `x`. This function is
         specialized since the original objective function only depends on a
         subvector of `x`.
-        '''
+        """
 
         x_hash = hashlib.sha1(x[:self.original_n]).hexdigest()
         same_x = self._last_x_hash == x_hash
@@ -200,11 +200,11 @@ class SlackNLP( MFModel ):
 
 
     def grad(self, x):
-        '''
+        """
         Return the value of the gradient of the objective function at `x`.
         This function is specialized since the original objective function only
         depends on a subvector of `x`.
-        '''
+        """
         g = np.zeros(self.n)
 
         x_hash = hashlib.sha1(x[:self.original_n]).hexdigest()
@@ -228,7 +228,7 @@ class SlackNLP( MFModel ):
 
 
     def cons(self, x):
-        '''
+        """
         Evaluate the vector of general constraints for the modified problem.
         Constraints are stored in the order in which they appear in the
         original problem. If constraint i is a range constraint, c[i] will
@@ -245,7 +245,7 @@ class SlackNLP( MFModel ):
         3. [ b  ]   linear constraints corresponding to bounds on original problem
         4. [ bR ]   linear constraints corresponding to 'upper' side of two-sided
                     bounds
-        '''
+        """
         n = self.n ; on = self.original_n
         m = self.m ; om = self.original_m
         nlp = self.nlp
@@ -316,10 +316,10 @@ class SlackNLP( MFModel ):
 
 
     def Bounds(self, x):
-        '''
+        """
         Evaluate the vector of equality constraints corresponding to bounds
         on the variables in the original problem.
-        '''
+        """
         lowerB = self.lowerB ; nlowerB = self.nlowerB
         upperB = self.upperB ; nupperB = self.nupperB
         rangeB = self.rangeB ; nrangeB = self.nrangeB
