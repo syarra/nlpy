@@ -31,8 +31,7 @@ class LSR1(object):
         self.n = n
         self.npairs = npairs
         # Optional arguments
-        self.scaling = kwargs.get('scaling', True)
-
+        self.scaling = kwargs.get('scaling', False)
         # insert to points to the location where the *next* (s,y) pair
         # is to be inserted in self.s and self.y.
         self.insert = 0
@@ -59,12 +58,11 @@ class LSR1(object):
         Bs = self.matvec(new_s)
         criterion = abs(numpy.dot(new_s, new_y - Bs))
 
-        if criterion >= self.accept_threshold * numpy.linalg.norm(new_s) * numpy.linalg.norm(new_y - Bs):
+        if criterion >= self.accept_threshold * numpy.linalg.norm(new_s) * numpy.linalg.norm(new_y - Bs) and criterion >= 1e-9 :
             insert = self.insert
             self.s[:,insert] = new_s.copy()
             self.y[:,insert] = new_y.copy()
             self.ys[insert] = numpy.dot(new_y, new_s)
-            #print 'ys', self.ys[insert]
             self.insert += 1
             self.insert = self.insert % self.npairs
         else:
@@ -127,7 +125,6 @@ class LSR1(object):
                         minimat[l_ind,k_ind] = minimat[k_ind,l_ind]
                         l_ind += 1
                 k_ind += 1
-
         #print minimat
         if paircount > 0:
             rng = paircount
