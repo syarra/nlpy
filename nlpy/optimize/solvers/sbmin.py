@@ -83,6 +83,7 @@ class SBMINFramework(object):
         self.pgnorm  = None
         self.tsolve = 0.0
         self.true_step = None
+        self.update_on_rejected_step = kwargs.get('update_on_rejected_step', False)
 
         # Options for Nocedal-Yuan backtracking
         self.ny      = kwargs.get('ny', False)
@@ -356,19 +357,17 @@ class SBMINFramework(object):
                     # Trust-region step is unsuccessful
                     self.TR.UpdateRadius(rho, stepnorm)
 
-
-
             self.step_status = step_status
             self.radii.append(self.TR.Delta)
             status = ''
 
-            self.true_step = self.x - self.x_old
             if self.save_lg:
                 self.lg = nlp.dual_feasibility(self.x)
 
+            self.true_step = self.x - self.x_old
+
             try:
                 self.PostIteration()
-                #print 'here'
             except UserExitRequest:
                 status = 'usr'
 
@@ -442,7 +441,7 @@ class SBMINPartialLqnFramework(SBMINFramework):
     Class SBMINPartialLqnFramework is a subclass of SBMINFramework. The method
     is based on a trust-region-based algorithm for nonlinear box constrained
     programming.
-    The only difference is that a limited-memory quasi-Newton Hessian
+    The only difference is that a limited-memory Quasi Newton Hessian
     approximation is used and maintained along the iterations. Unlike the
     SBMINLqnFramework class, limited-memory matrix does not approximate the
     first order term in the Hessian, i.e. not the pJ'J term.
@@ -460,12 +459,12 @@ class SBMINPartialLqnFramework(SBMINFramework):
         """
         # Quasi-Newton approximation update on *successful* iterations
         if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
-            s = self.true_step.copy()
+            s = self.x - self.x_old
             y = self.lg - self.lg_old
-            #print self.x, self.x_old
-            #print 's', s
-            #print 'y', y
             self.nlp.hupdate(s, y)
+        elif self.update_on_rejected_step:
+            s = self.solver.step
+            y = self.nlp.dual_feasibility(self.x_old + s) - self.lg_old
 
 
 
