@@ -170,7 +170,7 @@ class LBFGS(InverseLBFGS):
     def __init__(self, n, npairs=5, **kwargs):
         InverseLBFGS.__init__(self, n, npairs, **kwargs)
 
-        # Setup the logger. Install a NullHandler if no output needed.                                   
+        # Setup the logger. Install a NullHandler if no output needed.
         logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
         self.log = logging.getLogger(logger_name)
         #self.log.addHandler(logging.NullHandler())
@@ -239,7 +239,7 @@ class LBFGS(InverseLBFGS):
         for i in range(paircount):
             k = (self.insert - paircount + i) % self.npairs
             r -= (b[i]/self.gamma)*s[:,k]
-            r -= b[i+paircount]*y[:,k]            
+            r -= b[i+paircount]*y[:,k]
 
         return r
 
@@ -253,18 +253,18 @@ class LBFGS(InverseLBFGS):
 class LBFGS_unrolling(InverseLBFGS):
     """
     Class LBFGS is similar to InverseLBFGS, except that it operates 
-    on the Hessian approximation directly, rather than forming the inverse. 
+    on the Hessian approximation directly, rather than forming the inverse.
     Additional information is stored to compute this approximation 
     efficiently.
 
-    This form is useful in trust region methods, where the approximate Hessian 
+    This form is useful in trust region methods, where the approximate Hessian
     is used in the model problem.
     """
 
     def __init__(self, n, npairs=5, **kwargs):
         InverseLBFGS.__init__(self, n, npairs, **kwargs)
 
-        # Setup the logger. Install a NullHandler if no output needed.                                   
+        # Setup the logger. Install a NullHandler if no output needed
         logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
         self.log = logging.getLogger(logger_name)
         #self.log.addHandler(logging.NullHandler())
@@ -290,22 +290,16 @@ class LBFGS_unrolling(InverseLBFGS):
         for i in range(self.npairs):
             k = (self.insert + i) % self.npairs
             if ys[k] is not None:
-                #print 'k:', k
                 b[:,k] = y[:,k] / ys[k]**.5
                 bv = numpy.dot(b[:,k], v[:])
-                #print v, bv, bv*v
-                #q += bv * v
-                q += numpy.dot(numpy.outer(b[:,k],b[:,k]), v[:])
+                q += bv * b[:,k]
                 a[:,k] = s[:,k].copy()
-                #print s[:,k], a[:,k]
                 for j in range(i):
                     l = (self.insert + j) % self.npairs
                     if ys[l] is not None:
-                        #print 'l:', l
                         a[:,k] += numpy.dot(b[:,l], s[:,k]) * b[:,l]
                         a[:,k] -= numpy.dot(a[:,l], s[:,k]) * a[:,l]
                 a[:,k] /= numpy.dot(s[:,k], a[:,k])**.5
-                #print a[:,k], numpy.dot(s[:,k], a[:,k])**.5, numpy.dot(a[:,k], v[:])
                 q -= numpy.dot(numpy.outer(a[:,k],a[:,k]), v[:])#numpy.dot(a[:,k], v[:]) * a[:,k]
                 paircount += 1
 
@@ -317,15 +311,6 @@ class LBFGS_unrolling(InverseLBFGS):
         if ys < self.accept_threshold:
             self.log.debug('Not accepting LBFGS update: ys = %g' % ys)
         return
-
-
-def FormEntireMatrix(on,om,Jop):
-    J = numpy.zeros([om,on])
-    for i in range(0,on):
-         v = numpy.zeros(on)
-         v[i] = 1.
-         J[:,i] = Jop * v
-    return J
 
 
 class LBFGSFramework:
@@ -369,11 +354,6 @@ class LBFGSFramework:
         self.converged = False
 
         self.lbfgs = InverseLBFGS(self.nlp.n, **kwargs)
-        # Code for testingLBFGS
-        self.alt_lbfgs = LBFGS(self.nlp.n, **kwargs)
-        self.lsr1 = InverseLSR1(self.nlp.n, **kwargs)
-        self.alt_lsr1 = LSR1(self.nlp.n, **kwargs)
-        self.unrollingLBFGS = LBFGS_unrolling(self.nlp.n, **kwargs)
 
         self.x = kwargs.get('x0', self.nlp.x0)
         self.f = self.nlp.obj(self.x)
@@ -385,13 +365,6 @@ class LBFGSFramework:
         # Optional arguments
         self.maxiter = kwargs.get('maxiter', max(10*self.nlp.n, 1000))
         self.tsolve = 0.0
-
-    def hess_lbfgs(self):
-        return FormEntireMatrix(self.nlp.n,self.nlp.n,SimpleLinearOperator(self.nlp.n,self.nlp.n,symmetric=True, matvec = lambda v: self.alt_lbfgs.matvec(v)))
-    def ihess(self):
-        return FormEntireMatrix(self.nlp.n,self.nlp.n,SimpleLinearOperator(self.nlp.n,self.nlp.n,symmetric=True, matvec = lambda v: self.lbfgs.matvec(v)))
-    def hess(self):
-        return FormEntireMatrix(self.nlp.n,self.nlp.n,SimpleLinearOperator(self.nlp.n,self.nlp.n,symmetric=True, matvec = lambda v: self.unrollingLBFGS.matvec(v)))
 
 
     def solve(self):
@@ -442,23 +415,6 @@ class LBFGSFramework:
             # Update inverse Hessian approximation using the most recent pair
             self.lbfgs.store(s, y)
             self.iter += 1
-
-            # Code for testing the LBFGS implementation
-            self.alt_lbfgs.store(s, y)
-            self.lsr1.store(s, y)
-            self.alt_lsr1.store(s, y)
-            self.unrollingLBFGS.store(s, y)
-
-            print 'True hess'
-            print self.nlp.hess(self.x)
-            print 'approx hess lbfgs unrolling formula'
-            print self.hess()
-            print 'approx hess lbfgs compact form'
-            print self.hess_lbfgs()
-            print 'approx inverse hess'
-            print self.ihess()
-            print 'B*H'
-            print numpy.dot(self.hess(),self.ihess())
 
 
         self.tsolve = cputime() - tstart
