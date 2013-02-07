@@ -11,14 +11,13 @@ definitions.
 # =============================================================================
 import numpy as np
 import logging
-
 # =============================================================================
 # Extension modules
 # =============================================================================
 from nlpy.model.nlp import NLPModel
 from nlpy.model.mfnlp import SlackNLP
 from nlpy.optimize.solvers.lbfgs import LBFGS
-from nlpy.optimize.solvers.lsr1 import LSR1
+from nlpy.optimize.solvers.lsr1 import LSR1, LSR1_unrolling
 from nlpy.optimize.solvers.lsqr import LSQRFramework
 from nlpy.krylov.linop import SimpleLinearOperator
 from nlpy.krylov.linop import ReducedLinearOperator
@@ -153,7 +152,7 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangianQuasiNewton):
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',1), scaling=True, **kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',5), scaling=True, **kwargs)
 
 
 
@@ -163,7 +162,7 @@ class AugmentedLagrangianLsr1(AugmentedLagrangianQuasiNewton):
     """
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',1), **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',5), **kwargs)
 
 
 
@@ -202,7 +201,7 @@ class AugmentedLagrangianPartialLsr1(AugmentedLagrangianPartialQuasiNewton):
     """
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianPartialQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',5), scaling=False, **kwargs)
+        self.Hessapp = LSR1_unrolling(self.n, npairs=kwargs.get('qn_pairs',1), scaling=False, **kwargs)
 
 
 
@@ -295,8 +294,10 @@ class AugmentedLagrangianFramework(object):
 
         self.f0 = self.f = None
 
-        # Maximum number of iterations 
-        self.maxiter = kwargs.get('maxiter', 100*self.alprob.nlp.original_n)
+        # Maximum number of total inner iterations 
+        self.max_inner_iter = kwargs.get('max_inner_iter', 100*self.alprob.nlp.original_n)
+
+        self.update_on_rejected_step = False
 
         self.inner_fail_count = 0
         self.status = None
@@ -509,13 +510,13 @@ class AugmentedLagrangianFramework(object):
                                              '', self.alprob.rho,''))
 
         while not (exitOptimal or exitIter):
-
             self.iter += 1
 
             # Perform bound-constrained minimization
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
-                                        reltol=self.omega, x0=self.x,
-                                        verbose=True,**kwargs)
+                                     reltol=self.omega, x0=self.x,
+                                     maxiter=self.max_inner_iter/10., verbose=True,
+                                     update_on_rejected_step=self.update_on_rejected_step, **kwargs)
 
             SBMIN.Solve()
             self.x = SBMIN.x.copy()
@@ -592,12 +593,13 @@ class AugmentedLagrangianFramework(object):
             if self.eta < self.eta_opt:
                 self.eta = self.eta_opt
 
+
             try:
                 self.PostIteration()
             except UserExitRequest:
                 self.status = -3
 
-            exitIter = self.niter_total > self.maxiter
+            exitIter = self.niter_total > self.max_inner_iter
 
         self.tsolve = cputime() - t    # Solve time
         if self.alprob.nlp.m != 0:
@@ -666,4 +668,5 @@ class AugmentedLagrangianPartialLsr1Framework(AugmentedLagrangianQuasiNewtonFram
 
     def __init__(self, nlp, innerSolver, **kwargs):
         AugmentedLagrangianQuasiNewtonFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.update_on_rejected_step = True
         self.alprob = AugmentedLagrangianPartialLsr1(nlp,**kwargs)
