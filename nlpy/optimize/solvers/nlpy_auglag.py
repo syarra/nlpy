@@ -3,7 +3,7 @@
 from __future__ import with_statement # Required in 2.5
 from nlpy import __version__
 from nlpy.model import MFAmplModel
-from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINLqnFramework, SBMINPartialLqnFramework
+from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINPartialLqnFramework
 from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework, \
                                           AugmentedLagrangianPartialLbfgsFramework, \
                                           AugmentedLagrangianPartialLsr1Framework
@@ -14,6 +14,7 @@ import numpy
 import sys, logging, os
 import signal
 from contextlib import contextmanager
+
 
 class TimeoutException(Exception): pass
 
@@ -54,6 +55,8 @@ def pass_to_auglag(nlp, **kwargs):
         auglag.tsolve=0
         auglag.cons_max=0
         auglag.pi_max=0
+        auglag.pgnorm=0
+
 
     return (t_setup, auglag)
 
@@ -97,7 +100,7 @@ parser.add_option("-o", "--output_file", action="store", type="string",
 # Translate options to input arguments.
 opts = {}
 if options.maxiter is not None:
-    opts['maxiter'] = options.maxiter
+    opts['max_inner_iter'] = options.maxiter
 if options.magic_steps is not None:
     if options.magic_steps == 'agg':
         opts['magic_steps_agg'] = True
