@@ -65,17 +65,30 @@ class LSR1(object):
         """
         Bs = self.matvec(new_s)
         ymBs = new_y - Bs
-        criterion = abs(np.dot(ymBs, new_s))
+        criterion = abs(np.dot(ymBs, new_s)) >= self.accept_threshold * np.linalg.norm(new_s) * np.linalg.norm(ymBs)
+        ymBsTs_criterion = abs(np.dot(ymBs, new_s)) >= 1e-15
+        ys = np.dot(new_s, new_y)
 
-        if criterion >= self.accept_threshold * np.linalg.norm(new_s) * np.linalg.norm(ymBs) and criterion >= 1e-15 :
+        ys_criterion = True; scaling_criterion = True; yms_criterion = True
+        if self.scaling:
+            if abs(ys) >= 1e-15:
+                scaling_factor = ys/np.dot(new_y, new_y)
+                scaling_criterion = np.linalg.norm(new_y - new_s / scaling_factor) >= 1e-10
+            else:
+                ys_criterion = False
+        else:
+            if np.linalg.norm(new_y - new_s) < 1e-10:
+                yms_criterion = False
+
+        if ymBsTs_criterion and yms_criterion and scaling_criterion and criterion and ys_criterion:
             insert = self.insert
             self.s[:,insert] = new_s.copy()
             self.y[:,insert] = new_y.copy()
-            self.ys[insert] = np.dot(new_y, new_s)
+            self.ys[insert] = ys
             self.insert += 1
             self.insert = self.insert % self.npairs
         else:
-            self.log.debug('Not accepting LSR1 update: |<y-Bs,s>|= %g' % criterion)
+            self.log.debug('Not accepting LSR1 update: |<y-Bs,s>|= %s, y-s/gamma=%s, y-s = %s, ys=%s' % (criterion, scaling_criterion, yms_criterion, ys_criterion))
         return
 
 
@@ -178,11 +191,16 @@ class LSR1_unrolling(LSR1):
             k = (self.insert + i) % npairs
             if ys[k] is not None:
                 a[:,k] = y[:,k] - s[:,k]/self.gamma
+                #print 'a:', a[:,k]
+                #print 's:', s[:,k]
                 for j in range(i):
                     l = (self.insert + j) % npairs
                     if ys[l] is not None:
                         a[:,k] -= np.dot(a[:,l], s[:,k])/aTs[l] * a[:,l]
                 aTs[k] = np.dot(a[:,k], s[:,k])
+                #print 'a:', a[:,k]
+                #print 'k:', k
+                #print 'aTs:', aTs
                 q += np.dot(a[:,k],v[:])/aTs[k]*a[:,k]
         return q
 
