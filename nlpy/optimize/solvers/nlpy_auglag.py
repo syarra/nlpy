@@ -123,7 +123,10 @@ fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
 # Create root logger.
 nlpylogger = logging.getLogger('root')
 nlpylogger.setLevel(logging.INFO)
-hndlr = logging.StreamHandler(sys.stdout)
+if options.output_file == None:
+    hndlr = logging.StreamHandler(sys.stdout)
+else:
+    hndlr = logging.FileHandler(options.output_file)
 hndlr.setFormatter(fmt)
 nlpylogger.addHandler(hndlr)
 
@@ -149,8 +152,10 @@ if multiple_problems:
     nlpylogger.info('-' * lhdr)
 
 else:
-
-    hndlr = logging.StreamHandler(sys.stdout)
+    if options.output_file == None:
+        hndlr = logging.StreamHandler(sys.stdout)
+    else:
+        hndlr = logging.FileHandler(options.output_file)
     hndlr.setFormatter(fmt)
 
     # Configure auglag logger.
