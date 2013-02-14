@@ -100,7 +100,7 @@ class SBMINFramework(object):
 
         # Options for non monotone descent strategy
         self.monotone = kwargs.get('monotone', False)
-        self.nIterNonMono = kwargs.get('nIterNonMono', 25)
+        self.nIterNonMono = kwargs.get('nIterNonMono', 10)
 
         self.abstol  = kwargs.get('abstol', 1.0e-7)
         self.reltol  = kwargs.get('reltol', 1.0e-7)
@@ -278,17 +278,20 @@ class SBMINFramework(object):
             if rho >= self.TR.eta1:
 
                 # Trust-region step is successful
+                if self.magic_steps_cons:
+                    g_trial = nlp.grad(x_trial)
+                    m_step = self.magical_step(x_trial, g_trial)
+                    x_trial += m_step
+                    f_trial = nlp.obj(x_trial)
+                    stepnorm = np.linalg.norm(x_trial - self.x)
+                    if f_trial <= self.f:
+                        # Safety check for machine-precision errors in magical step
+                        m = m - (self.f - f_trial)
+
                 self.TR.UpdateRadius(rho, stepnorm)
-                self.x = x_trial
+                self.x = x_trial.copy()
                 self.f = f_trial
                 self.g = nlp.grad(self.x)
-
-                if self.magic_steps_cons:
-                    m_step = self.magical_step(self.x, self.g)
-                    self.x += m_step
-                    self.f = nlp.obj(self.x)
-                    self.g = nlp.grad(self.x)
-
                 self.pgnorm = norm_infty(self.projected_gradient(self.x, self.g))
 
                 step_status = 'Acc'
@@ -335,7 +338,7 @@ class SBMINFramework(object):
                         step_status = 'N-Y Rej'
                     else:
                         # Backtrack succeeded, update the current point
-                        self.x = x_trial
+                        self.x = x_trial.copy()
                         self.f = f_trial
                         self.g = nlp.grad(self.x)
 
