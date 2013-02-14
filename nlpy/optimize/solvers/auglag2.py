@@ -473,7 +473,7 @@ class AugmentedLagrangianFramework(object):
 
         PdL = self.project_gradient(self.x,dL)
         Pmax = np.max(np.abs(PdL))
-        self.pg0 = Pmax
+        self.pg0 = self.pgnorm = Pmax
 
         # Specific handling for the case where the original NLP is
         # unconstrained
