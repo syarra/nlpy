@@ -464,7 +464,8 @@ class BQP(object):
             #fixed_vars = np.concatenate((lower, upper))
             on_bound = np.concatenate((lower,upper))
             zero_grad = where(pg == 0.)
-            fixed_vars = np.intersect1d(on_bound,zero_grad)
+            #fixed_vars = np.intersect1d(on_bound,zero_grad)
+            fixed_vars = np.concatenate((lower, upper))
             free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
 
             # 2. Construct reduced QP.
@@ -501,6 +502,7 @@ class BQP(object):
                 nc_dir = np.zeros(n)
                 nc_dir[free_vars] = cg.dir
                 (x, (lower, upper)) = self.to_boundary(x, nc_dir, free_vars)
+                qval = qp.obj(x)
                 #(x, qval) = self.projected_linesearch(x, g, d, qval, use_bk_min=True)
             else:
                 # 4. Update x using projected linesearch with initial step=1.
@@ -531,8 +533,8 @@ class BQP(object):
 
                 on_bound = np.concatenate((lower,upper))
                 zero_grad = where(pg == 0.)
-                fixed_vars = np.intersect1d(on_bound,zero_grad)
-                #fixed_vars = np.concatenate((lower, upper))
+                #fixed_vars = np.intersect1d(on_bound,zero_grad)
+                fixed_vars = np.concatenate((lower, upper))
                 free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
                 ZHZ = ReducedHessian(self.H, free_vars)
                 Zg  = g[free_vars]
