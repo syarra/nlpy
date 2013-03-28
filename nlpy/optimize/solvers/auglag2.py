@@ -201,7 +201,7 @@ class AugmentedLagrangianPartialLsr1(AugmentedLagrangianPartialQuasiNewton):
     """
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianPartialQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1_unrolling(self.n, npairs=kwargs.get('qn_pairs',1), scaling=False, **kwargs)
+        self.Hessapp = LSR1_unrolling(self.n, npairs=kwargs.get('qn_pairs',min(3,self.n)), scaling=False, **kwargs)
 
 
 
@@ -564,7 +564,7 @@ class AugmentedLagrangianFramework(object):
                 # If optimality of the inner loop is not achieved within 10
                 # major iterations, exit immediately
                 if self.inner_fail_count == 10:
-                    self.status = 3
+                    self.status = -3
                     self.log.debug('Current point could not be improved, exiting ... \n')
                     break
 
