@@ -84,6 +84,9 @@ parser.add_option("-q", "--quasi_newton", action="store", type="string",
                   default=None, dest="quasi_newton",
                   help="Use quasi-newton approximation of Hessian \
                         (None, LBFGS, LSR1)")
+parser.add_option("-Q", "--qn_pairs", action="store", type="int",
+                  default=5, dest="qn_pairs",
+                  help="Number of pairs used in the Quasi Newton Hessian approximation")
 parser.add_option("-i", "--iter", action="store", type="int", default=None,
                   dest="maxiter",  help="Specify maximum number of iterations")
 parser.add_option("-t", "--time", action="store", type="int", default=1000,
@@ -109,6 +112,7 @@ if options.magic_steps is not None:
 opts['ny'] = options.ny
 opts['least_squares_pi'] = options.least_squares_pi
 opts['quasi_newton'] = options.quasi_newton
+opts['qn_pairs'] = options.qn_pairs
 opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
 opts['maxtime'] = options.maxtime
@@ -203,7 +207,7 @@ def apply_scaling(nlp):
 for ProblemName in args:
 
     nlp = MFAmplModel(ProblemName)
-    #apply_scaling(nlp)
+    apply_scaling(nlp)
 
     msg = 'You are trying to solve an unconstrained problem\n'
     msg += ' '*25+'with auglag2, you could have better results using\n'
@@ -223,7 +227,7 @@ for ProblemName in args:
             AUGLAG.niter_total = - AUGLAG.niter_total
             total_time = -total_time
 
-        problemName = os.path.splitext(os.path.basename(ProblemName))[0] 
+        problemName = os.path.splitext(os.path.basename(ProblemName))[0]
         nlpylogger.info(fmt % (problemName, nlp.n, nlp.m, AUGLAG.alprob.nlp.nlp.Hprod,
                         AUGLAG.niter_total, AUGLAG.f, AUGLAG.cons_max,
                         AUGLAG.pi_max, total_time, AUGLAG.status))
