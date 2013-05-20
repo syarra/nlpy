@@ -26,6 +26,13 @@ import warnings
 
 __docformat__ = 'restructuredtext'
 
+def FormEntireMatrix(on,om,Jop):
+    J = np.zeros([om,on])
+    for i in range(0,on):
+        v = np.zeros(on)
+        v[i] = 1.
+        J[:,i] = Jop * v
+    return J
 
 class SufficientDecreaseCG(TruncatedCG):
     """
@@ -136,7 +143,7 @@ class BQP(object):
         self.cg_reltol = 0.1
 
         # Armijo-style linesearch parameter.
-        self.armijo_factor = 1.0e-4
+        self.armijo_factor = 1.0e-2
 
         self.verbose = kwargs.get('verbose', True)
         self.hformat = '          %-5s  %8s  %8s  %5s'
@@ -241,14 +248,16 @@ class BQP(object):
         d is the search direction, qval is q(x) and
         step is the initial steplength.
         """
+
         check_feasible = kwargs.get('check_feasible', True)
         if check_feasible:
             self.check_feasible(x)
 
         # Check for local optimality.
         tol = 1.0e-6 * np.linalg.norm(x)
-        if np.linalg.norm(self.project(x + d) - x) < tol:
-            return (x, qval)
+
+        if np.linalg.norm(self.project(x + step*d) - x) < tol:
+            return (x, qval, step)
 
         if np.dot(g, d) >= 0:
             raise ValueError('Not a descent direction.')
@@ -257,6 +266,7 @@ class BQP(object):
         factor = self.armijo_factor
 
         self.log.debug('Projected linesearch with initial q = %7.1e' % qval)
+        #print 'Projected linesearch with initial q = %7.1e' % qval
 
         # Obtain stepsize to nearest and farthest breakpoints.
         bk_min, bk_max = self.breakpoints(x, d)
@@ -274,18 +284,18 @@ class BQP(object):
             q_xps = qp.obj(xps)
             slope = np.dot(g, xps - x)
 
-        decrease = (q_xps < qval + step * factor * slope)
+        decrease = (q_xps < qval + factor * slope)
 
         if not decrease:
             # Perform projected Armijo linesearch in order to reduce the step
             # until a successful step is found.
             while not decrease and step >= 1.0e-8:
-                step /= 3
+                step /= 6
                 xps = self.project(x + step * d)
                 q_xps = qp.obj(xps)
                 self.log.debug('  Backtracking with step = %7.1e q = %7.1e' % (step, q_xps))
                 slope = np.dot(g, xps - x)
-                decrease = (q_xps < qval + step * factor * slope)
+                decrease = (q_xps < qval + factor * slope)
         else:
             # The initial step yields sufficient decrease. See if we can
             # find a larger step with larger decrease.
@@ -295,25 +305,30 @@ class BQP(object):
                 q_ok = q_xps
                 q_prev = q_xps
                 while increase and step <= bk_max:
-                    step *= 3
+                    step *= 6
                     xps = self.project(x + step * d)
                     q_xps = qp.obj(xps)
                     self.log.debug('  Extrapolating with step = %7.1e q = %7.1e' % (step, q_xps))
                     slope = np.dot(g, xps - x)
-                    increase = slope < 0 and (q_xps < qval + step * factor * slope) and q_xps <= q_prev
+                    increase = slope < 0 and (q_xps < qval + factor * slope) and q_xps <= q_prev
                     if increase:
                         x_ok = xps.copy()
                         q_ok = q_xps
                         q_prev = q_xps
-                xps = x_ok
+                xps = x_ok.copy()
                 q_xps = q_ok
         q_xps = qp.obj(xps)
+
         if q_xps>qval:
             xps = x.copy()
             q_xps = qval
         self.log.debug('Projected linesearch ends with q = %7.1e' % q_xps)
+        #print 'step:', step
+        #print 'q_xps', q_xps
+        #print 'x:', xps
+        #print 'Projected linesearch ends with q = %7.1e' % q_xps
 
-        return (xps, q_xps)
+        return (xps, q_xps, step)
 
     def projected_gradient(self, x0, g=None, active_set=None, qval=None, **kwargs):
         """
@@ -358,9 +373,16 @@ class BQP(object):
 
             iter += 1
             qOld = qval
-
             # TODO: Use appropriate initial steplength.
-            (x, qval) = self.projected_linesearch(x, g, -g, qval)
+            if iter==1:
+                initial_steplength = 1.0
+            else:
+                #print 'step:', step
+                initial_steplength = step
+                #print 'step:', initial_steplength
+
+
+            (x, qval, step) = self.projected_linesearch(x, g, -g, qval, step=initial_steplength)
 
             # Check decrease in objective.
             decrease = qOld - qval
@@ -438,6 +460,8 @@ class BQP(object):
         while not (exitOptimal or exitIter or exitStalling):
             x_old = x.copy()
             iter += 1
+
+            #print 'iter:', iter
             if iter >= maxiter:
                 exitIter = True
                 continue
@@ -506,7 +530,7 @@ class BQP(object):
                 #(x, qval) = self.projected_linesearch(x, g, d, qval, use_bk_min=True)
             else:
                 # 4. Update x using projected linesearch with initial step=1.
-                (x, qval) = self.projected_linesearch(x, g, d, qval)
+                x, qval, step = self.projected_linesearch(x, g, d, qval)
 
                 self.log.debug('q after first CG pass = %8.2g' % qval)
 
@@ -562,7 +586,7 @@ class BQP(object):
                     #(x, qval) = self.projected_linesearch(x, g, d, qval, use_bk_min=True)
                 else:
                     # 4. Update x using projected linesearch with step=1.
-                    (x, qval) = self.projected_linesearch(x, g, d, qval)
+                    x, qval, step = self.projected_linesearch(x, g, d, qval)
 
                 self.log.debug('q after second CG pass = %8.2g' % qval)
 
