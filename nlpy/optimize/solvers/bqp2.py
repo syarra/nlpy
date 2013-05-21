@@ -150,8 +150,8 @@ class BQP(object):
         self.header  = self.hformat % ('Iter', 'q(x)', '|pg(x)|', 'cg')
         self.hlen    = len(self.header)
         self.hline   = '          ' + '-' * self.hlen
-        self.format  = '          %-5d  %8.2e  %8.2e  %5d'
-        self.format0 = '          %-5d  %8.2e  %8.2e  %5s'
+        self.format  = '          %-5d  %9.2e  %8.2e  %5d'
+        self.format0 = '          %-5d  %9.2e  %8.2e  %5s'
 
         # Create a logger for solver.
         self.log = logging.getLogger('nlpy.bqp')
