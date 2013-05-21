@@ -15,6 +15,7 @@ from nlpy.model import NLPModel
 
 __docformat__ = 'restructuredtext'
 
+
 class SBMINFramework(object):
     """
     An abstract framework for a trust-region-based algorithm for the nonlinear
@@ -105,7 +106,7 @@ class SBMINFramework(object):
         self.abstol  = kwargs.get('abstol', 1.0e-7)
         self.reltol  = kwargs.get('reltol', 1.0e-7)
         self.maxiter = kwargs.get('maxiter', max(100, 10*self.nlp.n))
-        self.verbose = kwargs.get('verbose', True)
+        self.verbose = kwargs.get('verbose', False)
         self.total_bqpiter = 0
 
         self.hformat = '%-5s  %9s  %7s %7s %5s  %8s  %8s  %4s'
@@ -123,6 +124,7 @@ class SBMINFramework(object):
         self.log.addHandler(logging.NullHandler())
         if not self.verbose:
             self.log.propagate = False
+            nlp.display_basic_info()
 
 
     def project(self, x):
@@ -201,7 +203,7 @@ class SBMINFramework(object):
 
         # Initialize non-monotonicity parameters.
         if not self.monotone:
-            self.log.info('Using Non monotone descent strategy')
+            self.log.debug('Using Non monotone descent strategy')
             fMin = fRef = fCan = self.f0
             l = 0
             sigRef = sigCan = 0
@@ -214,12 +216,13 @@ class SBMINFramework(object):
         status = ''
 
         # Print out header and initial log.
-        self.log.info(self.hline)
-        self.log.info(self.header)
-        self.log.info(self.hline)
-        self.log.info(self.format0 % (self.iter, self.f,
-                                             self.pgnorm, '', '', '',
-                                             '', ''))
+        if self.iter % 20 == 0 and self.verbose:
+            self.log.info(self.hline)
+            self.log.info(self.header)
+            self.log.info(self.hline)
+            self.log.info(self.format0 % (self.iter, self.f,
+                                                self.pgnorm, '', '', '',
+                                                '', ''))
 
         t = cputime()
 
@@ -375,7 +378,7 @@ class SBMINFramework(object):
                 status = 'usr'
 
             # Print out header, say, every 20 iterations
-            if self.iter % 20 == 0:
+            if self.iter % 20 == 0 and self.verbose:
                 self.log.info(self.hline)
                 self.log.info(self.header)
                 self.log.info(self.hline)
