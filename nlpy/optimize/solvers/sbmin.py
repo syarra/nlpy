@@ -16,6 +16,9 @@ from nlpy.model import NLPModel
 __docformat__ = 'restructuredtext'
 
 
+import pdb
+
+
 class SBMINFramework(object):
     """
     An abstract framework for a trust-region-based algorithm for the nonlinear
@@ -108,6 +111,8 @@ class SBMINFramework(object):
         self.maxiter = kwargs.get('maxiter', max(100, 10*self.nlp.n))
         self.verbose = kwargs.get('verbose', False)
         self.total_bqpiter = 0
+        self.cgiter = 0
+        self.total_cgiter = 0
 
         self.hformat = '%-5s  %9s  %7s %7s %5s  %8s  %8s  %4s'
         self.header  = self.hformat % ('     Iter','f(x)','|g(x)|', 'step', 'bqp',
@@ -124,6 +129,7 @@ class SBMINFramework(object):
         self.log.addHandler(logging.NullHandler())
         if not self.verbose:
             self.log.propagate = False
+        else:
             nlp.display_basic_info()
 
 
@@ -250,10 +256,12 @@ class SBMINFramework(object):
             step = self.solver.step
             stepnorm = self.solver.stepNorm
             bqpiter = self.solver.niter
+            self.cgiter = self.solver.bqpSolver.cgiter
             # Obtain model value at next candidate
             m = self.solver.m
 
             self.total_bqpiter += bqpiter
+            self.total_cgiter += self.cgiter
             x_trial = self.x + step
             f_trial = nlp.obj(x_trial)
 
@@ -338,7 +346,7 @@ class SBMINFramework(object):
                         # Backtrack failed to produce an improvement,
                         # keep the current x, f, and g.
                         # (Monotone strategy)
-                        step_status = 'N-Y Rej'
+                        step_status = 'NY-'
                     else:
                         # Backtrack succeeded, update the current point
                         self.x = x_trial.copy()
@@ -354,7 +362,7 @@ class SBMINFramework(object):
 
                         self.pgnorm = norm_infty(self.projected_gradient(self.x, self.g))
 
-                        step_status = 'N-Y Acc'
+                        step_status = 'NY+'
 
                     # Update the TR radius regardless of backtracking success
                     self.TR.Delta = alpha * stepnorm
@@ -371,6 +379,8 @@ class SBMINFramework(object):
                 self.lg = nlp.dual_feasibility(self.x)
 
             self.true_step = self.x - self.x_old
+            self.pstatus = step_status if step_status != 'Acc' else ''
+            self.radius = self.radii[-2]
 
             try:
                 self.PostIteration()
@@ -383,10 +393,9 @@ class SBMINFramework(object):
                 self.log.info(self.header)
                 self.log.info(self.hline)
 
-            pstatus = step_status if step_status != 'Acc' else ''
             self.log.info(self.format % (self.iter, self.f,
                           self.pgnorm, np.linalg.norm(self.true_step), bqpiter, rho,
-                          self.radii[-2], pstatus))
+                          self.radius, self.pstatus))
 
             exitOptimal = self.pgnorm <= stoptol
             exitIter    = self.iter > self.maxiter
