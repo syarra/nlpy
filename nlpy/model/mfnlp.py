@@ -119,7 +119,6 @@ class SlackNLP( MFModel ):
         if keep_variable_bounds==True:
             n = self.original_n + n_con_low + n_con_up
             m = self.original_m + nlp.nrangeC
-
             Lvar = np.zeros(n)
             Lvar[:self.original_n] = nlp.Lvar
             Uvar = +np.infty * np.ones(n)
@@ -133,16 +132,8 @@ class SlackNLP( MFModel ):
 
         Lcon = Ucon = np.zeros(m)
 
-        MFModel.__init__(self, n=n, m=m, name='Slack NLP', Lvar=Lvar, \
-                          Uvar=Uvar, Lcon=Lcon, Ucon=Ucon)
-
-        self.hprod = nlp.hprod
-        self.hiprod = self.hiprod
-
-        self.equalC = nlp.equalC ; self.nequalC = nlp.nequalC
-        self.lowerC = nlp.lowerC ; self.nlowerC = nlp.nlowerC
-        self.upperC = nlp.upperC ; self.nupperC = nlp.nupperC
-        self.rangeC = nlp.rangeC ; self.nrangeC = nlp.nrangeC
+        MFModel.__init__(self, n=n, m=m, name='Slack-' + nlp.name,
+                               Lvar=Lvar, Uvar=Uvar, Lcon=Lcon, Ucon=Ucon)
 
         # Redefine primal and dual initial guesses
         self.original_x0 = nlp.x0[:]
@@ -152,6 +143,22 @@ class SlackNLP( MFModel ):
         self.original_pi0 = nlp.pi0[:]
         self.pi0 = np.zeros(self.m)
         self.pi0[:self.original_m] = self.original_pi0[:]
+
+        # Define index sets for each slack type.
+        on = self.original_n
+        self.sLL = range(on, on + nlp.nlowerC) ; base = on + nlp.nlowerC
+        self.sLR = range(base, base + nlp.nrangeC) ; base += nlp.nrangeC
+        self.sUU = range(base, base + nlp.nupperC) ; base += nlp.nupperC
+        self.sUR = range(base, base + nlp.nrangeC) ; base += nlp.nrangeC
+
+        if keep_variable_bounds==False:
+            self.tLL = range(base, base + nlp.nlowerB) ; base += nlp.nlowerB
+            self.tLR = range(base, base + nlp.nrangeB) ; base += nlp.nrangeB
+            self.tUU = range(base, base + nlp.nupperB) ; base += nlp.nupperB
+            self.tUR = range(base, base + nlp.nrangeB) ; base += nlp.nrangeB
+
+        self.nnzj = nlp.nnzj
+        self.nnzh = nlp.nnzh
 
         # Saved values (private).
         self._last_x = np.infty * np.ones(self.original_n,'d')
@@ -168,7 +175,28 @@ class SlackNLP( MFModel ):
         Initialize all slack variables to given value. This method may need to
         be overridden.
         """
-        self.x0[self.original_n:] = val
+        on = self.original_n
+
+        # Initialize all slacks to given value.
+        if val is not None:
+            self.x0[self.on:] = val
+            return
+
+        # Initialize slacks corresponding to constraints to max(0, c-l) and max(0, u-c).
+        x0 = self.original_x0
+        c = self.nlp.cons(x0)
+        self.x0[self.sLL] = c[self.nlp.lowerC] - self.nlp.Lcon[self.nlp.lowerC]
+        self.x0[self.sLR] = c[self.nlp.rangeC] - self.nlp.Lcon[self.nlp.rangeC]
+        self.x0[self.sUU] = self.nlp.Ucon[self.nlp.upperC] - c[self.nlp.upperC]
+        self.x0[self.sUR] = self.nlp.Ucon[self.nlp.rangeC] - c[self.nlp.rangeC]
+
+        # Initialize slacks corresponding to bounds to max(0, x-l) and max(0, u-x).
+        self.x0[self.tLL] = x0[self.nlp.lowerB] - self.nlp.Lvar[self.nlp.lowerB]
+        self.x0[self.tLR] = x0[self.nlp.rangeB] - self.nlp.Lvar[self.nlp.rangeB]
+        self.x0[self.tUU] = self.nlp.Uvar[self.nlp.upperB] - x0[self.nlp.upperB]
+        self.x0[self.tUR] = self.nlp.Uvar[self.nlp.rangeB] - x0[self.nlp.rangeB]
+
+        self.x0[on:] = np.maximum(0, self.x0[on:])
         return
 
 
@@ -255,11 +283,6 @@ class SlackNLP( MFModel ):
         upperC = nlp.upperC ; nupperC = nlp.nupperC
         rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
 
-        mslow = on + self.n_con_low
-        msup  = mslow + self.n_con_up
-        s_low = x[on:mslow]    # len(s_low) = n_con_low
-        s_up  = x[mslow:msup]  # len(s_up)  = n_con_up
-
         c = np.empty(m)
         x_hash = hashlib.sha1(x[:self.original_n]).hexdigest()
         same_x = self._last_x_hash == x_hash
@@ -280,16 +303,16 @@ class SlackNLP( MFModel ):
         c[om:om+nrangeC] = c[rangeC]
 
         c[equalC] -= nlp.Lcon[equalC]
-        c[lowerC] -= nlp.Lcon[lowerC] ; c[lowerC] -= s_low[:nlowerC]
+        c[lowerC] -= nlp.Lcon[lowerC] ; c[lowerC] -= x[self.sLL]
 
         c[upperC] -= nlp.Ucon[upperC] ; c[upperC] *= -1.
-        c[upperC] -= s_up[:nupperC]
+        c[upperC] -= x[self.sUU]
 
-        c[rangeC] -= nlp.Lcon[rangeC] ; c[rangeC] -= s_low[nlowerC:]
+        c[rangeC] -= nlp.Lcon[rangeC] ; c[rangeC] -= x[self.sLR]
 
         c[om:om+nrangeC] -= nlp.Ucon[rangeC]
         c[om:om+nrangeC] *= -1
-        c[om:om+nrangeC] -= s_up[nupperC:]
+        c[om:om+nrangeC] -= x[self.sUR]
 
         if self.keep_variable_bounds==False:
             # Add linear constraints corresponding to bounds on original problem
@@ -297,20 +320,14 @@ class SlackNLP( MFModel ):
             upperB = nlp.upperB ; nupperB = nlp.nupperB ; Uvar = nlp.Uvar
             rangeB = nlp.rangeB ; nrangeB = nlp.nrangeB
 
-            nt = on + self.n_con_low + self.n_con_up
-            ntlow = nt + self.n_var_low
-            t_low = x[nt:ntlow]
-            t_up  = x[ntlow:]
-
             b = c[om+nrangeC:]
-
-            b[:nlowerB] = x[lowerB] - Lvar[lowerB] - t_low[:nlowerB]
+            b[:nlowerB] = x[lowerB] - Lvar[lowerB] - x[self.tLL]
             b[nlowerB:nlowerB+nrangeB] = x[rangeB] - Lvar[rangeB] \
-                                        - t_low[nlowerB:]
+                                        - x[self.tLR]
             b[nlowerB+nrangeB:nlowerB+nrangeB+nupperB] = Uvar[upperB] \
-                                        - x[upperB] - t_up[:nupperB]
+                                        - x[upperB] - x[self.tUU]
             b[nlowerB+nrangeB+nupperB:] = Uvar[rangeB] - x[rangeB] \
-                                        - t_up[nupperB:]
+                                        - x[self.tUR]
 
         return c
 
@@ -320,42 +337,35 @@ class SlackNLP( MFModel ):
         Evaluate the vector of equality constraints corresponding to bounds
         on the variables in the original problem.
         """
-        lowerB = self.lowerB ; nlowerB = self.nlowerB
-        upperB = self.upperB ; nupperB = self.nupperB
-        rangeB = self.rangeB ; nrangeB = self.nrangeB
+        if keep_variable_bounds == False:
+            lowerB = self.lowerB ; nlowerB = self.nlowerB
+            upperB = self.upperB ; nupperB = self.nupperB
+            rangeB = self.rangeB ; nrangeB = self.nrangeB
 
-        n  = self.n ; on = self.original_n
-        mslow = on + nrangeC + self.n_con_low
-        msup  = mslow + self.n_con_up
-        nt = self.original_n + self.n_con_low + self.n_con_up
-        ntlow = nt + self.n_var_low
+            n  = self.n ; on = self.original_n
 
-        t_low  = x[msup:ntlow]
-        t_up   = x[ntlow:]
+            b = np.empty(n + nrangeB)
+            b[:n] = x[:]
+            b[n:] = x[rangeB]
 
-        b = np.empty(n + nrangeB)
-        b[:n] = x[:]
-        b[n:] = x[rangeB]
+            b[lowerB] -= self.Lvar[lowerB]
+            b[upperB] -= self.Uvar[upperB] ; b[upperB] *= -1
+            b[rangeB] -= self.Lvar[rangeB]
+            b[n:]     -= self.Uvar[rangeB] ; b[n:] *= -1
 
-        b[lowerB] -= self.Lvar[lowerB] ; b[lowerB] -= t_low[:nlowerB]
-
-        b[upperB] -= self.Uvar[upperB] ; b[upperB] *= -1
-        b[upperB] -= t_up[:nupperB]
-
-        b[rangeB] -= self.Lvar[rangeB] ; b[rangeB] -= t_low[nlowerB:]
-        b[n:]     -= self.Uvar[rangeB] ; b[n:] *= -1
-        b[n:]     -= t_up[nupperB:]
-
-        return b
+            b[lowerB] -= x[self.tLL]
+            b[upperB] -= x[self.tUU]
+            b[rangeB] -= x[self.tLR]
+            b[n:]     -= x[self.tUR]
+            return b
+        else:
+            return None
 
 
     def jprod(self, x, v, **kwargs):
-
+        n = self.n ; on = self.original_n
+        m = self.m ; om = self.original_m
         nlp = self.nlp
-        on = self.original_n
-        om = self.original_m
-        n = self.n
-        m = self.m
 
         # List() simply allows operations such as 1 + [2,3] -> [3,4]
         lowerC = List(nlp.lowerC) ; nlowerC = nlp.nlowerC
@@ -364,8 +374,6 @@ class SlackNLP( MFModel ):
         lowerB = List(nlp.lowerB) ; nlowerB = nlp.nlowerB
         upperB = List(nlp.upperB) ; nupperB = nlp.nupperB
         rangeB = List(nlp.rangeB) ; nrangeB = nlp.nrangeB
-        nbnds  = nlowerB + nupperB + 2*nrangeB
-        nSlacks = nlowerC + nupperC + 2*nrangeC
 
         p = np.zeros(m)
 
@@ -382,20 +390,24 @@ class SlackNLP( MFModel ):
 
         if self.keep_variable_bounds==False:
             # Insert contribution of bound constraints on the original problem
-            bot  = m+nrangeC ;
+            bot = m+nrangeC; p[bot:bot+nlowerB] += v[lowerB]
+            bot += nlowerB;  p[bot:bot+nrangeB] += v[rangeB]
+            bot += nrangeB;  p[bot:bot+nupperB] -= v[upperB]
+            bot += nupperB;  p[bot:bot+nrangeB] -= v[rangeB]
 
-            # To be finished
+            # Insert contribution of slacks on the bound constraints
+            bot = m+nrangeC; p[bot:bot+nlowerB] -= v[self.tLL]
+            bot += nlowerB;  p[bot:bot+nrangeB] -= v[self.tLR]
+            bot += nrangeB;  p[bot:bot+nupperB] -= v[self.tUU]
+            bot += nupperB;  p[bot:bot+nrangeB] -= v[self.tUR]
 
         return p
 
 
     def jtprod(self, x, v, **kwargs):
-
+        n = self.n ; on = self.original_n
+        m = self.m ; om = self.original_m
         nlp = self.nlp
-        on = self.original_n
-        om = self.original_m
-        n = self.n
-        m = self.m
 
         # List() simply allows operations such as 1 + [2,3] -> [3,4]
         lowerC = List(nlp.lowerC) ; nlowerC = nlp.nlowerC
@@ -404,8 +416,6 @@ class SlackNLP( MFModel ):
         lowerB = List(nlp.lowerB) ; nlowerB = nlp.nlowerB
         upperB = List(nlp.upperB) ; nupperB = nlp.nupperB
         rangeB = List(nlp.rangeB) ; nrangeB = nlp.nrangeB
-        nbnds  = nlowerB + nupperB + 2*nrangeB
-        nSlacks = nlowerC + nupperC + 2*nrangeC
 
         p = np.zeros(n)
         vmp = v[:om].copy()
@@ -422,10 +432,21 @@ class SlackNLP( MFModel ):
 
         if self.keep_variable_bounds==False:
             # Insert contribution of bound constraints on the original problem
-            bot  = m+nrangeC ;
+            bot = m+nrangeC; p[lowerB] += v[bot:bot+nlowerB]
+            bot += nlowerB;  p[rangeB] += v[bot:bot+nrangeB]
+            bot += nrangeB;  p[upperB] -= v[bot:bot+nupperB]
+            bot += nupperB;  p[rangeB] -= v[bot:bot+nrangeB]
 
-            # To be finished
+            # Insert contribution of slacks on the bound constraints
+            bot = m+nrangeC; p[self.tLL] -= v[bot:bot+nlowerB]
+            bot += nlowerB;  p[self.tLR] -= v[bot:bot+nrangeB]
+            bot += nrangeB;  p[self.tUU] -= v[bot:bot+nupperB]
+            bot += nupperB;  p[self.tUR] -= v[bot:bot+nrangeB]
 
         return p
 
-
+    def hprod(self, x, y, v, **kwargs):
+        on = self.original_n ; om = self.original_m
+        Hv = np.zeros(self.n)
+        Hv[:on] = self.nlp.hprod(x[:on], y[:om], v[:on], **kwargs)
+        return Hv
