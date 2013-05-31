@@ -56,7 +56,7 @@ class MFModel(NLPModel):
 
 
 
-class SlackNLP( MFModel ):
+class SlackNLP( NLPModel ):
     """
     General framework for converting a nonlinear optimization problem to a
     form using slack variables.
@@ -132,7 +132,7 @@ class SlackNLP( MFModel ):
 
         Lcon = Ucon = np.zeros(m)
 
-        MFModel.__init__(self, n=n, m=m, name='Slack-' + nlp.name,
+        NLPModel.__init__(self, n=n, m=m, name='Slack-' + nlp.name,
                                Lvar=Lvar, Uvar=Uvar, Lcon=Lcon, Ucon=Ucon)
 
         # Redefine primal and dual initial guesses
@@ -390,13 +390,17 @@ class SlackNLP( MFModel ):
 
         if self.keep_variable_bounds==False:
             # Insert contribution of bound constraints on the original problem
-            bot = m+nrangeC; p[bot:bot+nlowerB] += v[lowerB]
-            bot += nlowerB;  p[bot:bot+nrangeB] += v[rangeB]
-            bot += nrangeB;  p[bot:bot+nupperB] -= v[upperB]
-            bot += nupperB;  p[bot:bot+nrangeB] -= v[rangeB]
+            print 'lowerB:', lowerB, 'upperB', upperB, 'rangeB', rangeB
+            print 'p:', p
+            print 'v:', v
+            bot = om+nrangeC; p[bot:bot+nlowerB] += v[lowerB]
+            print bot
+            bot += nlowerB;  p[bot:bot+nrangeB] += v[rangeB]; print bot
+            bot += nrangeB;  p[bot:bot+nupperB] -= v[upperB]; print bot
+            bot += nupperB;  p[bot:bot+nrangeB] -= v[rangeB]; print bot
 
             # Insert contribution of slacks on the bound constraints
-            bot = m+nrangeC; p[bot:bot+nlowerB] -= v[self.tLL]
+            bot = om+nrangeC; p[bot:bot+nlowerB] -= v[self.tLL]
             bot += nlowerB;  p[bot:bot+nrangeB] -= v[self.tLR]
             bot += nrangeB;  p[bot:bot+nupperB] -= v[self.tUU]
             bot += nupperB;  p[bot:bot+nrangeB] -= v[self.tUR]
@@ -418,9 +422,11 @@ class SlackNLP( MFModel ):
         rangeB = List(nlp.rangeB) ; nrangeB = nlp.nrangeB
 
         p = np.zeros(n)
+        print 'p:',p, 'v:', v
+        print 'rangeC:', rangeC
         vmp = v[:om].copy()
         vmp[upperC] *= -1.0
-        vmp[rangeC] -= v[om:]
+        vmp[rangeC] -= v[om:om+nrangeC]
 
         p[:on] = nlp.jtprod(x[:on], vmp)
 
@@ -432,13 +438,13 @@ class SlackNLP( MFModel ):
 
         if self.keep_variable_bounds==False:
             # Insert contribution of bound constraints on the original problem
-            bot = m+nrangeC; p[lowerB] += v[bot:bot+nlowerB]
+            bot = om+nrangeC; p[lowerB] += v[bot:bot+nlowerB]
             bot += nlowerB;  p[rangeB] += v[bot:bot+nrangeB]
             bot += nrangeB;  p[upperB] -= v[bot:bot+nupperB]
             bot += nupperB;  p[rangeB] -= v[bot:bot+nrangeB]
 
             # Insert contribution of slacks on the bound constraints
-            bot = m+nrangeC; p[self.tLL] -= v[bot:bot+nlowerB]
+            bot = om+nrangeC; p[self.tLL] -= v[bot:bot+nlowerB]
             bot += nlowerB;  p[self.tLR] -= v[bot:bot+nrangeB]
             bot += nrangeB;  p[self.tUU] -= v[bot:bot+nupperB]
             bot += nupperB;  p[self.tUR] -= v[bot:bot+nrangeB]
@@ -450,3 +456,12 @@ class SlackNLP( MFModel ):
         Hv = np.zeros(self.n)
         Hv[:on] = self.nlp.hprod(x[:on], y[:om], v[:on], **kwargs)
         return Hv
+
+
+class MFSlackNLP( SlackNLP, MFModel ):
+    def __init__(self, nlp, **kwargs):
+
+        # Standard initializations
+
+        MFModel.__init__(self,**kwargs)
+        SlackNLP.__init__(self,nlp,**kwargs)

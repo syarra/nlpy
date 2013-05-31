@@ -7,6 +7,7 @@ Python interface to the AMPL modeling language
 
 import numpy as np
 from nlpy.model.nlp import NLPModel, KKTresidual
+from nlpy.model.mfnlp import MFModel
 from nlpy.model import _amplpy
 from pysparse.sparse.pysparseMatrix import PysparseMatrix as sp
 from nlpy.krylov.linop import SimpleLinearOperator, PysparseLinearOperator
@@ -1221,14 +1222,14 @@ class AmplModel(NLPModel):
         return
 
 
-
-class MFAmplModel(AmplModel):
+class MFAmplModel(AmplModel, MFModel):
     '''
     Python interface to AMPL model for a fake matrix-free use of AMPL
     '''
 
     def __init__(self, stub, **kwargs):
 
+        MFModel.__init__(self,**kwargs)
         AmplModel.__init__(self, stub, **kwargs)
         self.Jprod = 0
         self. JTprod = 0
@@ -1271,14 +1272,3 @@ class MFAmplModel(AmplModel):
     def jtprod(self, x, v, **kwargs):
         self.JTprod += 1
         return self._J(x, **kwargs).T * v
-
-
-    def jac(self, x, **kwargs):
-        return SimpleLinearOperator(self.m, self.n, symmetric=False,
-                         matvec=lambda u: self.jprod(x,u,**kwargs),
-                         matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
-
-
-    def hess(self, x, z=None, **kwargs):
-        return SimpleLinearOperator(self.n, self.n, symmetric=True,
-                         matvec=lambda u: self.hprod(x,z,u))

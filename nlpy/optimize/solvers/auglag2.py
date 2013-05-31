@@ -15,7 +15,7 @@ import logging
 # Extension modules
 # =============================================================================
 from nlpy.model.nlp import NLPModel
-from nlpy.model.mfnlp import SlackNLP
+from nlpy.model.mfnlp import MFSlackNLP
 from nlpy.optimize.solvers.lbfgs import LBFGS
 from nlpy.optimize.solvers.lsr1 import LSR1, LSR1_unrolling
 from nlpy.optimize.solvers.lsqr import LSQRFramework
@@ -40,8 +40,8 @@ class AugmentedLagrangian(NLPModel):
     def __init__(self, nlp, **kwargs):
 
         # Analyze NLP to add slack variables to the formulation
-        if not isinstance(nlp, SlackNLP):
-            self.nlp = SlackNLP(nlp, keep_variable_bounds=True, **kwargs)
+        if not isinstance(nlp, MFSlackNLP):
+            self.nlp = MFSlackNLP(nlp, keep_variable_bounds=True, **kwargs)
         else: self.nlp = nlp
 
         self.rho_init = kwargs.get('rho_init',10.)
@@ -515,7 +515,7 @@ class AugmentedLagrangianFramework(object):
             # Perform bound-constrained minimization
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                      reltol=self.omega, x0=self.x,
-                                     maxiter=self.max_inner_iter/10., verbose=True,
+                                     #maxiter=self.max_inner_iter/10., verbose=True,
                                      update_on_rejected_step=self.update_on_rejected_step, **kwargs)
 
             SBMIN.Solve()
