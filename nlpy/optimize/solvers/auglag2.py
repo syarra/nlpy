@@ -445,6 +445,12 @@ class AugmentedLagrangianFramework(object):
         """
         return None
 
+    def SetupInnerSolver(self, **kwargs):
+        return self.innerSolver(self.alprob, self.tr, TRSolver,
+                                reltol=self.omega, x0=self.x,
+                                maxiter=self.max_inner_iter/10., verbose=True,
+                                update_on_rejected_step=self.update_on_rejected_step, **kwargs)
+
 
     def solve(self, **kwargs):
         """
@@ -488,7 +494,7 @@ class AugmentedLagrangianFramework(object):
         self.omega_opt = self.omega_rel * self.pg0 + self.omega_abs
         self.eta_opt = self.eta_rel * max_cons + self.eta_abs
 
-        tr = TR(eta1=1.0e-4, eta2=.9, gamma1=.25, gamma2=2.5)
+        self.tr = TR(eta1=1.0e-4, eta2=.9, gamma1=.25, gamma2=2.5)
 
         self.iter = 0
         self.inner_fail_count = 0
@@ -513,10 +519,7 @@ class AugmentedLagrangianFramework(object):
             self.iter += 1
 
             # Perform bound-constrained minimization
-            SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
-                                     reltol=self.omega, x0=self.x,
-                                     maxiter=self.max_inner_iter/10., verbose=True,
-                                     update_on_rejected_step=self.update_on_rejected_step, **kwargs)
+            SBMIN = self.SetupInnerSolver()
 
             SBMIN.Solve()
             self.x = SBMIN.x.copy()
@@ -564,7 +567,7 @@ class AugmentedLagrangianFramework(object):
                 # If optimality of the inner loop is not achieved within 10
                 # major iterations, exit immediately
                 if self.inner_fail_count == 10:
-                    self.status = -3
+                    self.status = 1
                     self.log.debug('Current point could not be improved, exiting ... \n')
                     break
 
@@ -670,3 +673,16 @@ class AugmentedLagrangianPartialLsr1Framework(AugmentedLagrangianQuasiNewtonFram
         AugmentedLagrangianQuasiNewtonFramework.__init__(self, nlp, innerSolver, **kwargs)
         self.update_on_rejected_step = True
         self.alprob = AugmentedLagrangianPartialLsr1(nlp,**kwargs)
+
+
+
+class AugmentedLagrangianTronFramework(AugmentedLagrangianFramework):
+    """
+    Augmented Lagrangian algorithm using TRON as inner solver.
+    """
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
+
+    def SetupInnerSolver(self, **kwargs):
+        return self.innerSolver(self.alprob, reltol=self.omega, x0=self.x, **kwargs)
+

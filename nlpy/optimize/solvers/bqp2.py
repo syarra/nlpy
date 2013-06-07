@@ -374,15 +374,7 @@ class BQP(object):
             iter += 1
             qOld = qval
             # TODO: Use appropriate initial steplength.
-            if iter==1:
-                initial_steplength = 1.0
-            else:
-                #print 'step:', step
-                initial_steplength = step
-                #print 'step:', initial_steplength
-
-
-            (x, qval, step) = self.projected_linesearch(x, g, -g, qval, step=initial_steplength)
+            (x, qval, self.cauchy_steplength) = self.projected_linesearch(x, g, -g, qval, step=self.cauchy_steplength)
 
             # Check decrease in objective.
             decrease = qOld - qval
@@ -456,6 +448,8 @@ class BQP(object):
         self.log.info(self.header)
         self.log.info(self.hline)
         self.log.info(self.format0 % (iter, 0.0, pgNorm, ''))
+
+        self.cauchy_steplength = 1.0
 
         while not (exitOptimal or exitIter or exitStalling):
             x_old = x.copy()

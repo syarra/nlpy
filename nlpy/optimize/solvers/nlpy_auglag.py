@@ -97,6 +97,7 @@ parser.add_option("-p", "--print_level", action="store", type="int",
 parser.add_option("-o", "--output_file", action="store", type="string",
                   default=None, dest="output_file",
                   help="Redirect iterations detail in an output file")
+
 # Parse command-line options
 (options, args) = parser.parse_args()
 
@@ -223,7 +224,7 @@ for ProblemName in args:
         if nlp.m == 0:
             AUGLAG.pi_max = AUGLAG.cons_max = 0
 
-        if AUGLAG.status != 0:
+        if AUGLAG.status < 0:
             AUGLAG.niter_total = - AUGLAG.niter_total
             total_time = -total_time
 
