@@ -1,0 +1,45 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module pytron__user__routines 
+    interface pytron_user_interface 
+        subroutine aprod(n,x,y) ! in :dtron:../tron/src/tron/dtron.f:dtron:unknown_interface
+            integer, depend(x), intent(hide) :: n=len(s)
+            double precision dimension(n), intent(in ) :: x
+            double precision dimension(n), intent(out) :: y
+        end subroutine aprod
+    end interface pytron_user_interface
+end python module pytron__user__routines
+python module pytron ! in 
+    interface  ! in :dtron
+        subroutine dtron(n,x,xl,xu,f,g,aprod,frtol,fatol,fmin,cgtol,itermax,delta,task,xc,s,indfree,isave,dsave,wa,wx,wy,iwa) ! in :dtron:../tron/src/tron/dtron.f
+            use pytron__user__routines
+            integer, intent(hide) ,check(len(x)>=n),depend(x) :: n=len(x)
+            double precision dimension(n), intent(in,out) :: x
+            double precision dimension(n),depend(n) :: xl
+            double precision dimension(n),depend(n) :: xu
+            double precision, intent(in) :: f
+            double precision dimension(n),depend(n), intent(in) :: g
+            external aprod
+            double precision, optional :: frtol = 1.0e-12
+            double precision, optional :: fatol = 0.0
+            double precision, optional :: fmin  = -1.0e+32
+            double precision, optional :: cgtol = 0.1
+            integer, optional :: itermax = n
+            double precision, intent(in,out) :: delta
+            character*60, intent(in,out) :: task
+            double precision dimension(n),depend(n), intent(in,out) :: xc
+            double precision dimension(n),depend(n), intent(in,out) :: s
+            integer dimension(n),depend(n), intent(in,out) :: indfree
+            integer dimension(3), intent(in,out) :: isave
+            double precision dimension(3), intent(in,out) :: dsave
+            double precision dimension(7 * n),depend(n), intent(in,out) :: wa
+            double precision dimension(n),depend(n), intent(in,out) :: wx
+            double precision dimension(n),depend(n), intent(in,out) :: wy
+            integer dimension(3 * n),depend(n), intent(in,out) :: iwa
+        end subroutine pytron
+    end interface 
+end python module pytron
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/
