@@ -3,10 +3,15 @@
 from __future__ import with_statement # Required in 2.5
 from nlpy import __version__
 from nlpy.model import MFAmplModel
-from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINPartialLqnFramework
+from nlpy.optimize.solvers.sbmin import SBMINFramework, SBMINLqnFramework, SBMINPartialLqnFramework, \
+                                        SBMINStructuredLqnFramework
 from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianFramework, \
+                                          AugmentedLagrangianLbfgsFramework,\
+                                          AugmentedLagrangianLsr1Framework, \
                                           AugmentedLagrangianPartialLbfgsFramework, \
-                                          AugmentedLagrangianPartialLsr1Framework
+                                          AugmentedLagrangianPartialLsr1Framework, \
+                                          AugmentedLagrangianStructuredLbfgsFramework, \
+                                          AugmentedLagrangianStructuredLsr1Framework
 from nlpy.tools.timing import cputime
 from nlpy.tools.logs import config_logger
 from optparse import OptionParser
@@ -42,6 +47,12 @@ def pass_to_auglag(nlp, **kwargs):
                     **kwargs)
     elif qn == 'LSR1':
         auglag = AugmentedLagrangianPartialLsr1Framework(nlp, SBMINPartialLqnFramework,
+                    **kwargs)
+    elif qn == 'SLBFGS':
+        auglag = AugmentedLagrangianStructuredLbfgsFramework(nlp, SBMINStructuredLqnFramework,
+                    **kwargs)
+    elif qn == 'SLSR1':
+        auglag = AugmentedLagrangianStructuredLsr1Framework(nlp, SBMINStructuredLqnFramework,
                     **kwargs)
 
     t_setup = cputime() - t    # Setup time.
@@ -207,7 +218,7 @@ def apply_scaling(nlp):
 for ProblemName in args:
 
     nlp = MFAmplModel(ProblemName)
-    apply_scaling(nlp)
+    #apply_scaling(nlp)
 
     msg = 'You are trying to solve an unconstrained problem\n'
     msg += ' '*25+'with auglag2, you could have better results using\n'

@@ -3,8 +3,8 @@
 SBMIN
 A Trust-Region Method for Bound-Constrained Optimization.
 """
-from nlpy.optimize.solvers.lbfgs import LBFGS
-from nlpy.optimize.solvers.lsr1 import LSR1
+from nlpy.optimize.solvers.lbfgs import LBFGS, LBFGS_structured
+from nlpy.optimize.solvers.lsr1 import LSR1, LSR1_unrolling, LSR1_structured
 from nlpy.tools.norms import norm_infty
 from nlpy.tools.timing import cputime
 from nlpy.tools.exceptions import UserExitRequest
@@ -227,6 +227,7 @@ class SBMINFramework(object):
 
             self.iter += 1
             self.x_old = self.x.copy()
+            self.f_old = self.f
             # Save current gradient for quasi-Newton approximation
             if self.save_g:
                 self.g_old = self.g.copy()
@@ -417,7 +418,7 @@ class SBMINLqnFramework(SBMINFramework):
 
         qn = kwargs.get('quasi_newton','LBFGS')
         SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
-        self.lbfgs = eval(qn+'(nlp.n, npairs=1, scaling=True)')
+        self.lbfgs = eval(qn+'(nlp.n, npairs=100, scaling=False)')
         self.save_g = True
 
 
@@ -435,7 +436,8 @@ class SBMINLqnFramework(SBMINFramework):
         if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
             s = self.true_step.copy()
             y = self.g - self.g_old
-            self.lbfgs.store(s, y)
+            yd = y.copy()
+            self.lbfgs.store(s, y, yd)
 
 
 
@@ -468,7 +470,62 @@ class SBMINPartialLqnFramework(SBMINFramework):
         elif self.update_on_rejected_step:
             s = self.solver.step
             y = self.nlp.dual_feasibility(self.x_old + s) - self.lg_old
+            self.nlp.hupdate(s,y)
 
+class SBMINStructuredLqnFramework(SBMINFramework):
+    """
+    Class SBMINPartialLqnFramework is a subclass of SBMINFramework. The method
+    is based on a trust-region-based algorithm for nonlinear box constrained
+    programming.
+    The only difference is that a limited-memory Quasi Newton Hessian
+    approximation is used and maintained along the iterations. Unlike the
+    SBMINLqnFramework class, limited-memory matrix does not approximate the
+    first order term in the Hessian, i.e. not the pJ'J term.
+    """
+    def __init__(self, nlp, TR, TrSolver, **kwargs):
+
+        SBMINFramework.__init__(self, nlp, TR, TrSolver, **kwargs)
+        self.save_lg = True
+
+    def PostIteration(self, **kwargs):
+        """
+        This method updates the limited-memory quasi-Newton Hessian by
+        appending the most recent (s,y) pair to it and possibly discarding the
+        oldest one if all the memory has been used.
+        """
+        # Quasi-Newton approximation update on *successful* iterations
+        if self.step_status == 'Acc' or self.step_status == 'N-Y Acc':
+            s = self.x - self.x_old
+            Jx = self.nlp.nlp.jac(self.x)
+            Jx_old = self.nlp.nlp.jac(self.x_old)
+            consx = self.nlp.nlp.cons(self.x)
+            consx_old = self.nlp.nlp.cons(self.x_old)
+            gx = self.nlp.nlp.grad(self.x)
+            gx_old = self.nlp.nlp.grad(self.x_old)
+            pi = self.nlp.pi
+            rho = self.nlp.rho
+            dc = -pi + rho * consx
+            ydB = gx - gx_old + Jx.T * dc - Jx_old.T * dc
+            yB = self.g - self.g_old
+            #ydB = self.lg - self.lg_old # if set to this should be the same as the unrolling formula
+            #yB = ydB.copy()
+            self.nlp.update(s, yB, ydB)
+        elif self.update_on_rejected_step:
+            s = self.solver.step
+            Jx = self.nlp.nlp.jac(self.x_old + s)
+            Jx_old = self.nlp.nlp.jac(self.x_old)
+            consx = self.nlp.nlp.cons(self.x_old + s)
+            consx_old = self.nlp.nlp.cons(self.x_old)
+            gx = self.nlp.nlp.grad(self.x_old + s)
+            gx_old = self.nlp.nlp.grad(self.x_old)
+            pi = self.nlp.pi
+            rho = self.nlp.rho
+            dc = -pi + rho * consx
+            ydB = gx - gx_old + Jx.T * dc - Jx_old.T * dc
+            yB = self.nlp.grad(self.x_old+s) - self.g_old
+            #ydB = self.nlp.dual_feasibility(self.x_old + s) - self.lg_old # if set to this should be the same as the unrolling formula
+            #yB = ydB.copy()
+            self.nlp.update(s, yB, ydB)
 
 
 class TrustBQPModel(NLPModel):

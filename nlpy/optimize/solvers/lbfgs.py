@@ -312,6 +312,91 @@ class LBFGS_unrolling(InverseLBFGS):
             self.log.debug('Not accepting LBFGS update: ys = %g' % ys)
         return
 
+class LBFGS_structured(InverseLBFGS):
+    """
+    LBFGS quasi newton using an unrolling formula.
+    For this procedure see [Nocedal06]
+    """
+    def __init__(self, n, npairs=5, **kwargs):
+        InverseLBFGS.__init__(self, n, npairs, **kwargs)
+        self.yd = numpy.empty((self.n, self.npairs), 'd')
+        self.accept_threshold = 1e-8
+        # Setup the logger. Install a NullHandler if no output needed
+        logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
+        self.log = logging.getLogger(logger_name)
+        #self.log.addHandler(logging.NullHandler())
+        self.log.info('Logger created')
+
+
+    def matvec(self, v):
+        """
+        Compute a matrix-vector product between the current limited-memory
+        approximation to the Hessian matrix and the vector v using
+        the outer product representation.
+
+        Note: there is probably some optimization that could be done in this
+        function with respect to memory use and storing key dot products.
+        """
+        self.numMatVecs += 1
+
+        q = v.copy()
+        s = self.s ; y = self.y ; yd = self.yd ; ys = self.ys
+        npairs = self.npairs
+        a = numpy.zeros([self.n, npairs])
+        ad = numpy.zeros([self.n, npairs])
+
+        aTs = numpy.zeros([npairs,1])
+        adTs = numpy.zeros([npairs,1])
+
+        if self.scaling:
+            last = (self.insert - 1) % npairs
+            if ys[last] is not None:
+                self.gamma = ys[last]/numpy.dot(y[:,last],y[:,last])
+                q /= self.gamma
+
+        for i in range(npairs):
+            k = (self.insert + i) % npairs
+            if ys[k] is not None:
+                coef = (self.gamma*ys[k]/numpy.dot(s[:,k],s[:,k]))**0.5
+                a[:,k] = y[:,k] + coef * s[:,k]/self.gamma
+                ad[:,k] = yd[:,k] - s[:,k]/self.gamma
+                for j in range(i):
+                    l = (self.insert + j) % npairs
+                    if ys[l] is not None:
+                        alTs = numpy.dot(a[:,l], s[:,k])/aTs[l]
+                        adlTs = numpy.dot(ad[:,l], s[:,k])
+                        update = alTs/aTs[l] * ad[:,l] + adlTs/aTs[l] * a[:,l] - adTs[l]/aTs[l] * alTs * a[:,l]
+                        a[:,k] += coef * update.copy()
+                        ad[:,k] -= update.copy()
+                aTs[k] = numpy.dot(a[:,k], s[:,k])
+                adTs[k] = numpy.dot(ad[:,k], s[:,k])
+                aTv = numpy.dot(a[:,k],v[:])
+                adTv = numpy.dot(ad[:,k],v[:])
+                q += aTv/aTs[k] * ad[:,k] + adTv/aTs[k] * a[:,k] - aTv*adTs[k]/aTs[k]**2 * a[:,k]
+        return q
+
+    def store(self, new_s, new_y, new_yd):
+        """
+        Store the new pair (new_s,new_y, new_yd). A new pair
+        is only accepted if 
+        | y_k' s_k + (y's s_k' B_k s_k)**.5 | >= 1e-8.
+        """
+        ys = numpy.dot(new_s, new_y)
+        Bs = self.matvec(new_s)
+        ypBs = ys + (ys * numpy.dot(new_s, Bs))**0.5
+
+        if ypBs>=self.accept_threshold:
+            insert = self.insert
+            self.s[:,insert] = new_s.copy()
+            self.y[:,insert] = new_y.copy()
+            self.yd[:,insert] = new_yd.copy()
+            self.ys[insert] = ys
+            self.insert += 1
+            self.insert = self.insert % self.npairs
+        else:
+            self.log.debug('Not accepting LBFGS update')
+        return
+
 
 class LBFGSFramework:
     """
