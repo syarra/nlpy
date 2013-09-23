@@ -14,7 +14,8 @@ def configuration(parent_package='',top_path=None):
                         'nlpy_funnel.py',
                         'nlpy_elastic.py',
                         'nlpy_sbmin.py',
-                        'nlpy_auglag.py'])
+                        'nlpy_auglag.py',
+                        'nlpy_algencan.py'])
 
     config.make_config_py()
     return config

@@ -1263,20 +1263,77 @@ class MFAmplModel(AmplModel):
         return PysparseLinearOperator(J, symmetric=False)
 
 
+    def _JPos(self, x, **kwargs):
+        """
+        Convenience function to evaluate the Jacobian matrix of the constraints
+        reformulated as
+
+            ci(x) = ai       for i in equalC
+
+            ci(x) - Li >= 0  for i in lowerC
+
+            ci(x) - Li >= 0  for i in rangeC
+
+            Ui - ci(x) >= 0  for i in upperC
+
+            Ui - ci(x) >= 0  for i in rangeC.
+
+        The gradients of the general constraints appear in
+        'natural' order, i.e., in the order in which they appear in the problem.
+        The gradients of range constraints appear in two places: first in the
+        'natural' location and again after all other general constraints, with a
+        flipped sign to account for the upper bound on those constraints.
+
+        The overall Jacobian of the new constraints thus has the form
+
+        [ J ]
+        [-JR]
+
+        This is a `m + nrangeC` by `n` matrix, where `J` is the Jacobian of the
+        general constraints in the order above in which the sign of the 'less
+        than' constraints is flipped, and `JR` is the Jacobian of the 'less
+        than' side of range constraints.
+        """
+        store_zeros = kwargs.get('store_zeros', False)
+        store_zeros = 1 if store_zeros else 0
+        n = self.n ; m = self.m ; nrangeC = self.nrangeC
+        upperC = self.upperC ; rangeC = self.rangeC
+
+        # Initialize sparse Jacobian
+        J = sp(nrow=m + nrangeC, ncol=n, sizeHint=self.nnzj+10*nrangeC,
+               storeZeros=store_zeros)
+
+        # Insert contribution of general constraints
+        J[:m,:n] = self.model.eval_J(x, self.mformat, store_zeros)
+        J[upperC,:n] *= -1                 # Flip sign of 'upper' gradients
+        J[m:,:n] = -J[rangeC,:n]           # Append 'upper' side of range const.
+        return PysparseLinearOperator(J, symmetric=False)
+
+
+
     def jprod(self, x, v, **kwargs):
         self.Jprod += 1
         return self._J(x, **kwargs) * v
 
 
-    def jtprod(self, x, v, **kwargs):
-        self.JTprod += 1
-        return self._J(x, **kwargs).T * v
+    def jprodPos(self, x, v, **kwargs):
+        return self._JPos(x, **kwargs) * v
+
+
+    def jtprodPos(self, x, v, **kwargs):
+        return self._JPos(x, **kwargs).T * v
 
 
     def jac(self, x, **kwargs):
         return SimpleLinearOperator(self.m, self.n, symmetric=False,
                          matvec=lambda u: self.jprod(x,u,**kwargs),
                          matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
+
+
+    def jacPos(self, x, **kwargs):
+        return SimpleLinearOperator(self.m+self.nrangeC, self.n, symmetric=False,
+                         matvec=lambda u: self.jprodPos(x,u,**kwargs),
+                         matvec_transp=lambda u: self.jtprodPos(x,u,**kwargs))
 
 
     def hess(self, x, z=None, **kwargs):
