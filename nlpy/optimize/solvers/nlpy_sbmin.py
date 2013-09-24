@@ -150,7 +150,7 @@ def apply_scaling(nlp):
 # Solve each problem in turn.
 for ProblemName in args:
     nlp = amplpy.MFAmplModel(ProblemName)         # Create a model
-    apply_scaling(nlp)
+    #apply_scaling(nlp)
 
     t = cputime()
     t_setup, SBMIN = pass_to_sbmin(nlp, **opts)
@@ -160,7 +160,7 @@ for ProblemName in args:
         problemName = os.path.splitext(os.path.basename(ProblemName))[0]
         nlpylogger.info(fmt % (problemName, nlp.n, SBMIN.iter, SBMIN.nlp.Hprod,
                                 SBMIN.f, repr(SBMIN.status), total_time))
-
+    nlp.close()
 
 if not multiple_problems and not error:
     # Output final statistics

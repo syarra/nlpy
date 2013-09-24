@@ -15,7 +15,7 @@ import logging
 # Extension modules
 # =============================================================================
 from nlpy.model.nlp import NLPModel
-from nlpy.model.mfnlp import SlackNLP
+from nlpy.model.mfnlp import MFSlackNLP
 from nlpy.optimize.solvers.lbfgs import LBFGS, LBFGS_structured
 from nlpy.optimize.solvers.lsr1 import LSR1, LSR1_unrolling, LSR1_structured
 from nlpy.optimize.solvers.lsqr import LSQRFramework
@@ -40,8 +40,8 @@ class AugmentedLagrangian(NLPModel):
     def __init__(self, nlp, **kwargs):
 
         # Analyze NLP to add slack variables to the formulation
-        if not isinstance(nlp, SlackNLP):
-            self.nlp = SlackNLP(nlp, keep_variable_bounds=True, **kwargs)
+        if not isinstance(nlp, MFSlackNLP):
+            self.nlp = MFSlackNLP(nlp, keep_variable_bounds=True, **kwargs)
         else: self.nlp = nlp
 
         self.rho_init = kwargs.get('rho_init',10.)
@@ -113,33 +113,6 @@ class AugmentedLagrangian(NLPModel):
         w += self.rho * (J.T * (J * v))
         return w
 
-    def _hprod(self, x, z, v, **kwargs):
-        """
-        Compute the Hessian-vector product of the Hessian of the augmented
-        Lagrangian with arbitrary vector v.
-        """
-        nlp = self.nlp
-        on = nlp.original_n
-        om = nlp.original_m
-        upperC = nlp.upperC ; nupperC = nlp.nupperC
-        rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
-        w = np.zeros(self.n)
-
-        pi_bar = self.pi[:om].copy()
-        pi_bar[upperC] *= -1.0
-        pi_bar[rangeC] -= self.pi[om:].copy()
-
-        cons = nlp.cons(x)
-
-        mu = cons[:om].copy()
-        mu[upperC] *= -1.0
-        mu[rangeC] -= cons[om:].copy()
-
-        w[:on] = nlp.hprod(x[:on], -pi_bar + self.rho * mu, v[:on])
-        J = nlp.jac(x)
-        w += self.rho * (J.T * (J * v))
-        return w
-
 
     def hess(self, x, z=None, **kwargs):
         return SimpleLinearOperator(self.n, self.n, symmetric=True,
@@ -168,11 +141,7 @@ class AugmentedLagrangianQuasiNewton(AugmentedLagrangian):
         return
 
     def hreset(self):
-        print 'restart'
         self.Hessapp.restart()
-        print self.Hessapp.s
-        print self.Hessapp.y
-        print self.Hessapp.ys
         return
 
 
@@ -183,7 +152,7 @@ class AugmentedLagrangianLbfgs(AugmentedLagrangianQuasiNewton):
 
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',100), scaling=True, **kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',5), scaling=True, **kwargs)
 
 
 
@@ -193,7 +162,7 @@ class AugmentedLagrangianLsr1(AugmentedLagrangianQuasiNewton):
     """
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',100),scaling=False, **kwargs)
+        self.Hessapp = LSR1(self.n, npairs=kwargs.get('qn_pairs',5), **kwargs)
 
 
 
@@ -221,7 +190,7 @@ class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianPartialQuasiNewton):
     """
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianPartialQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',100), scaling=True, **kwargs)
+        self.Hessapp = LBFGS(self.n, npairs=kwargs.get('qn_pairs',1), scaling=True, **kwargs)
 
 
 
@@ -232,8 +201,7 @@ class AugmentedLagrangianPartialLsr1(AugmentedLagrangianPartialQuasiNewton):
     """
     def __init__(self, nlp, **kwargs):
         AugmentedLagrangianPartialQuasiNewton.__init__(self, nlp, **kwargs)
-        self.Hessapp = LSR1_unrolling(self.n, npairs=kwargs.get('qn_pairs',100),#min(3,self.n)),
-                scaling=False, **kwargs)
+        self.Hessapp = LSR1_unrolling(self.n, npairs=kwargs.get('qn_pairs',min(3,self.n)), scaling=False, **kwargs)
 
 
 
@@ -604,7 +572,7 @@ class AugmentedLagrangianFramework(object):
             # Perform bound-constrained minimization
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
                                      reltol=self.omega, x0=self.x,
-                                     maxiter=self.max_inner_iter/10., verbose=True,
+                                     #maxiter=self.max_inner_iter/10., verbose=True,
                                      update_on_rejected_step=self.update_on_rejected_step, **kwargs)
 
             SBMIN.Solve()
