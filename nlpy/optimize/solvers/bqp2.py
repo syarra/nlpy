@@ -144,14 +144,16 @@ class BQP(object):
 
         # Armijo-style linesearch parameter.
         self.armijo_factor = 1.0e-2
+        
+        self.cgiter = 0   # Total number of CG iterations.
 
         self.verbose = kwargs.get('verbose', True)
-        self.hformat = '          %-5s  %8s  %8s  %5s'
+        self.hformat = '          %-5s  %9s  %8s  %5s'
         self.header  = self.hformat % ('Iter', 'q(x)', '|pg(x)|', 'cg')
         self.hlen    = len(self.header)
         self.hline   = '          ' + '-' * self.hlen
-        self.format  = '          %-5d  %8.2e  %8.2e  %5d'
-        self.format0 = '          %-5d  %8.2e  %8.2e  %5s'
+        self.format  = '          %-5d  %9.2e  %8.2e  %5d'
+        self.format0 = '          %-5d  %9.2e  %8.2e  %5s'
 
         # Create a logger for solver.
         self.log = logging.getLogger('nlpy.bqp')
@@ -458,6 +460,10 @@ class BQP(object):
         self.log.info(self.format0 % (iter, 0.0, pgNorm, ''))
 
         while not (exitOptimal or exitIter or exitStalling):
+
+            cgiter_1 = 0
+            cgiter_2 = 0
+
             x_old = x.copy()
             iter += 1
 
@@ -513,6 +519,7 @@ class BQP(object):
             # because its original stopping test was triggered.
             msg = 'CG stops (%d its, status = %s)' % (cg.niter, cg.status)
             self.log.debug(msg)
+            cgiter_1 = cg.niter
 
             # 3. Expand search direction.
             d = np.zeros(n)
@@ -543,6 +550,7 @@ class BQP(object):
                 self.log.debug('Exiting because residual is small')
                 self.log.info(self.format % (iter, qval,
                               pgNorm, cg.niter))
+                self.cgiter += cg.niter
                 continue
 
             # Compare active set to binding set.
@@ -570,6 +578,7 @@ class BQP(object):
 
                 msg = 'CG stops (%d its, status = %s)' % (cg.niter, cg.status)
                 self.log.debug(msg)
+                cgiter_2 = cg.niter
 
                 d = np.zeros(n)
                 d[free_vars] = cg.step
@@ -599,9 +608,10 @@ class BQP(object):
                     self.log.debug('Exiting because residual is small')
                     exitOptimal = True
 
+            cgiter = cgiter_1 + cgiter_2  # Total CG iters in this BQP iteration.
+            self.cgiter += cgiter         # Total CG iters so far.
             exitStalling = (np.linalg.norm(x-x_old)) <= 1e-18
-            self.log.info(self.format % (iter, qval,
-                          pgNorm, cg.niter))
+            self.log.info(self.format % (iter, qval, pgNorm, cgiter))
 
         self.exitOptimal = exitOptimal
         self.exitIter = exitIter

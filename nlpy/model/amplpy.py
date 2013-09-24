@@ -1114,7 +1114,7 @@ class AmplModel(NLPModel):
         obj_weight = kwargs.get('obj_weight', 1.0)
         if z is None: z = np.zeros(self.m)
         self.Hprod += 1
-        Hv = self.model.H_prod(z, v, obj_weight)
+        Hv = self.model.H_prod(-z, v, obj_weight)
         if self.scale_obj:
             Hv *= self.scale_obj
         if not self.minimize:
