@@ -144,13 +144,11 @@ else:
 def apply_scaling(nlp):
     "Apply scaling to the NLP and print something if asked."
     gNorm = nlp.compute_scaling_obj()
-    # sbminlogger.info('%17s: %8s %8s' % ('Scaling applied', 'g unscaled', '|g| scaled'))
-    # sbminlogger.info('%17s: %8.1e %8.1e'     % ('  objective', gNorm, nlp.scale_obj * gNorm))
 
 # Solve each problem in turn.
 for ProblemName in args:
     nlp = amplpy.MFAmplModel(ProblemName)         # Create a model
-    #apply_scaling(nlp)
+    apply_scaling(nlp)
 
     t = cputime()
     t_setup, SBMIN = pass_to_sbmin(nlp, **opts)

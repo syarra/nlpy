@@ -6,14 +6,8 @@ The class is compatable with both the standard and matrix-free NLP
 definitions.
 """
 
-# =============================================================================
-# External Python modules
-# =============================================================================
 import numpy as np
 import logging
-# =============================================================================
-# Extension modules
-# =============================================================================
 from nlpy.model.nlp import NLPModel
 from nlpy.model.mfnlp import MFSlackNLP
 from nlpy.optimize.solvers.lbfgs import LBFGS, LBFGS_structured

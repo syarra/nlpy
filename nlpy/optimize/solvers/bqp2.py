@@ -21,18 +21,9 @@ import numpy as np
 import logging
 import warnings
 
-#import pdb
 
 
 __docformat__ = 'restructuredtext'
-
-def FormEntireMatrix(on,om,Jop):
-    J = np.zeros([om,on])
-    for i in range(0,on):
-        v = np.zeros(on)
-        v[i] = 1.
-        J[:,i] = Jop * v
-    return J
 
 class SufficientDecreaseCG(TruncatedCG):
     """
@@ -64,9 +55,6 @@ class SufficientDecreaseCG(TruncatedCG):
         self.decrease_old = 0
         self.cg_reltol = kwargs.get('cg_reltol', 0.1)
         self.detect_stalling = kwargs.get('detect_stalling', True)
-        #self.Lvar = kwargs.get('Lvar', None)
-        #self.Uvar = kwargs.get('Uvar', None)
-        #self.x = kwargs.get('x', None)
         self.g0 = np.linalg.norm(g)
 
     def post_iteration(self):
@@ -78,20 +66,6 @@ class SufficientDecreaseCG(TruncatedCG):
         decrease = self.qOld - self.qval
         self.log.debug('Current / best decrease : %7.1e / %7.1e' % \
                 (decrease, self.best_decrease))
-
-        # The following test would indicate a bug.
-        #xps = self.x + s
-        #projected_xps = np.minimum(self.Uvar, np.maximum(self.Lvar, xps))
-
-        #if not identical(xps, projected_xps):
-        #    self.log.debug('CG stops with a constraint violation')
-        #    raise UserExitRequest
-
-        # This already happens in TruncatedCG.
-        #Dqnorm = np.linalg.norm(g + self.H * (self.x + s))
-        #if Dqnorm <= min(1.0e-8, 10e-6 * self.g0):
-        #    self.log.debug('CG stops with small residual')
-        #    raise UserExitRequest
 
         if self.qval <= -1e+25:
             raise UserExitRequest
@@ -325,11 +299,6 @@ class BQP(object):
             xps = x.copy()
             q_xps = qval
         self.log.debug('Projected linesearch ends with q = %7.1e' % q_xps)
-        #print 'step:', step
-        #print 'q_xps', q_xps
-        #print 'x:', xps
-        #print 'Projected linesearch ends with q = %7.1e' % q_xps
-
         return (xps, q_xps, step)
 
     def projected_gradient(self, x0, g=None, active_set=None, qval=None, **kwargs):
@@ -385,7 +354,7 @@ class BQP(object):
 
 
             (x, qval, step) = self.projected_linesearch(x, g, -g, qval, step=initial_steplength)
-
+            g = self.qp.grad(x)
             # Check decrease in objective.
             decrease = qOld - qval
 
@@ -467,7 +436,6 @@ class BQP(object):
             x_old = x.copy()
             iter += 1
 
-            #print 'iter:', iter
             if iter >= maxiter:
                 exitIter = True
                 continue
@@ -491,10 +459,8 @@ class BQP(object):
             # Conjugate gradient phase: explore current face.
 
             # 1. Obtain indices of the free variables.
-            #fixed_vars = np.concatenate((lower, upper))
             on_bound = np.concatenate((lower,upper))
             zero_grad = where(pg == 0.)
-            #fixed_vars = np.intersect1d(on_bound,zero_grad)
             fixed_vars = np.concatenate((lower, upper))
             free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
 
@@ -504,10 +470,7 @@ class BQP(object):
             ZHZ = ReducedHessian(self.H, free_vars)
             Zg  = g[free_vars]
 
-            cg = SufficientDecreaseCG(Zg, ZHZ, #x=x[free_vars],
-                                      #Lvar=qp.Lvar[free_vars],
-                                      #Uvar=qp.Uvar[free_vars],
-                                      detect_stalling=True)
+            cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=True)
             try:
                 cg.Solve(abstol=1.0e-5, reltol=1.0e-3)
             except UserExitRequest:
@@ -534,7 +497,6 @@ class BQP(object):
                 nc_dir[free_vars] = cg.dir
                 (x, (lower, upper)) = self.to_boundary(x, nc_dir, free_vars)
                 qval = qp.obj(x)
-                #(x, qval) = self.projected_linesearch(x, g, d, qval, use_bk_min=True)
             else:
                 # 4. Update x using projected linesearch with initial step=1.
                 x, qval, step = self.projected_linesearch(x, g, d, qval)
@@ -565,15 +527,11 @@ class BQP(object):
 
                 on_bound = np.concatenate((lower,upper))
                 zero_grad = where(pg == 0.)
-                #fixed_vars = np.intersect1d(on_bound,zero_grad)
                 fixed_vars = np.concatenate((lower, upper))
                 free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
                 ZHZ = ReducedHessian(self.H, free_vars)
                 Zg  = g[free_vars]
-                cg = SufficientDecreaseCG(Zg, ZHZ,  #x=x[free_vars],
-                                          #Lvar=qp.Lvar[free_vars],
-                                          #Uvar=qp.Uvar[free_vars],
-                                          detect_stalling=True)
+                cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=True)
                 cg.Solve(absol=1.0e-6, reltol=1.0e-4)
 
                 msg = 'CG stops (%d its, status = %s)' % (cg.niter, cg.status)
@@ -592,7 +550,6 @@ class BQP(object):
                     nc_dir[free_vars] = cg.dir
                     (x, (lower, upper)) = self.to_boundary(x, nc_dir, free_vars)
                     qval = qp.obj(x)
-                    #(x, qval) = self.projected_linesearch(x, g, d, qval, use_bk_min=True)
                 else:
                     # 4. Update x using projected linesearch with step=1.
                     x, qval, step = self.projected_linesearch(x, g, d, qval)

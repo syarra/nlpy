@@ -191,16 +191,11 @@ class LSR1_unrolling(LSR1):
             k = (self.insert + i) % npairs
             if ys[k] is not None:
                 a[:,k] = y[:,k] - s[:,k]/self.gamma
-                #print 'a:', a[:,k]
-                #print 's:', s[:,k]
                 for j in range(i):
                     l = (self.insert + j) % npairs
                     if ys[l] is not None:
                         a[:,k] -= np.dot(a[:,l], s[:,k])/aTs[l] * a[:,l]
                 aTs[k] = np.dot(a[:,k], s[:,k])
-                #print 'a:', a[:,k]
-                #print 'k:', k
-                #print 'aTs:', aTs
                 q += np.dot(a[:,k],v[:])/aTs[k]*a[:,k]
         return q
 
@@ -267,8 +262,6 @@ class LSR1_structured(LSR1):
         | s_k' (y_k -B_k s_k) | >= 1e-8 ||s_k|| ||y_k - B_k s_k ||.
         """
         Bs = self.matvec(new_s)
-        #print 'Bs:', Bs
-        #print 'new_y:', new_y
         ymBs = new_yd - Bs
         criterion = abs(np.dot(ymBs, new_s)) >= self.accept_threshold * np.linalg.norm(new_s) * np.linalg.norm(ymBs)
         ymBsTs_criterion = abs(np.dot(ymBs, new_s)) >= 1e-15
@@ -365,6 +358,3 @@ class InverseLSR1(LSR1):
                 q += b[k]*s[:,k] - b[k]*self.gamma*y[:,k]
 
         return q
-
-
-# end class

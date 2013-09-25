@@ -173,7 +173,6 @@ class LBFGS(InverseLBFGS):
         # Setup the logger. Install a NullHandler if no output needed.
         logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
         self.log = logging.getLogger(logger_name)
-        #self.log.addHandler(logging.NullHandler())
         self.log.info('Logger created')
 
     def matvec(self, v):
