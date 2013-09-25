@@ -53,7 +53,6 @@ class MFModel(NLPModel):
         return SimpleLinearOperator(self.n, self.n, symmetric=True,
                          matvec=lambda u: self.hprod(x,z,u,**kwargs))
 
-
 class MFSlackNLP( SlackNLP):
     def __init__(self, nlp, **kwargs):
 
