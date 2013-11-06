@@ -181,6 +181,11 @@ if not multiple_problems and not error:
     sbminlogger.info('  Total time                  : %-gs' % (total_time))
     sbminlogger.info('  Status                      : %-s', SBMIN.status)
     sbminlogger.info('-------------------------------')
+    sbminlogger.info('  Number of Hprod in BQP')
+    sbminlogger.info('     - linesearch              : %-d' % SBMIN.hprod_bqp_linesearch)
+    sbminlogger.info('     - # linesearch            : %-d' % SBMIN.nlinesearch)
+    sbminlogger.info('     - linesearch mean         : %-g' % (float(SBMIN.hprod_bqp_linesearch)/SBMIN.nlinesearch))
+    sbminlogger.info('     - cg                      : %-d' % SBMIN.hprod_bqp_cg)
 
     # Plot the evolution of the trust-region radius on the last problem
     if opts['plot_radi'] == True:
