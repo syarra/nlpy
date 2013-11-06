@@ -15,6 +15,7 @@ def configuration(parent_package='',top_path=None):
                         'nlpy_elastic.py',
                         'nlpy_sbmin.py',
                         'nlpy_auglag.py',
+                        'nlpy_bqp.py',
                         'nlpy_algencan.py'])
 
     config.make_config_py()
