@@ -1330,3 +1330,14 @@ class MFAmplModel(AmplModel, MFModel):
         return SimpleLinearOperator(self.m+self.nrangeC, self.n, symmetric=False,
                          matvec=lambda u: self.jprodPos(x,u,**kwargs),
                          matvec_transp=lambda u: self.jtprodPos(x,u,**kwargs))
+
+
+    def jac(self, x, **kwargs):
+        return SimpleLinearOperator(self.n, self.m, symmetric=False,
+                         matvec=lambda u: self.jprod(x,u,**kwargs),
+                         matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
+
+
+    def hess(self, x, z=None, **kwargs):
+        return SimpleLinearOperator(self.n, self.n, symmetric=True,
+                         matvec=lambda u: self.hprod(x,z,u,**kwargs))

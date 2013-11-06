@@ -65,16 +65,6 @@ class MFSlackNLP( SlackNLP):
                          matvec=lambda u: self.jprod(x,u,**kwargs),
                          matvec_transp=lambda u: self.jtprod(x,u,**kwargs))
 
-    # Caution here ! 
-    # we defined hprod in auglag to be the original size hessian product.
-    # so here hprod is a on vector and not a n vector.
-    # This should be fixed.
-
-    def hprod(self, x, y, v, **kwargs):
-        on = self.original_n ; om = self.original_m
-        Hv = self.nlp.hprod(x[:on], y[:om], v[:on], **kwargs)
-        return Hv
-
     def hess(self, x, z=None, **kwargs):
-        return SimpleLinearOperator(self.original_n, self.original_n, symmetric=True,
+        return SimpleLinearOperator(self.n, self.n, symmetric=True,
                          matvec=lambda u: self.hprod(x,z,u,**kwargs))

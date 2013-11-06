@@ -98,6 +98,15 @@ parser.add_option("-q", "--quasi_newton", action="store", type="string",
 parser.add_option("-Q", "--qn_pairs", action="store", type="int",
                   default=5, dest="qn_pairs",
                   help="Number of pairs used in the Quasi Newton Hessian approximation")
+parser.add_option("-C", "--cg_reltol", action="store", type="float",
+                  default=0.1, dest="cg_reltol",
+                  help="Relative tolerance for CG in BQP")
+parser.add_option("-G", "--pgrad_reltol", action="store", type="float",
+                  default=0.25, dest="pgrad_reltol",
+                  help="Relative tolerance in projected_gradient method in BQP")
+parser.add_option("-A", "--armijo_factor", action="store", type="float",
+                  default=1e-2, dest="armijo_factor",
+                  help="Armijo factor used in projected_linesearch method in BQP")
 parser.add_option("-i", "--iter", action="store", type="int", default=None,
                   dest="maxiter",  help="Specify maximum number of iterations")
 parser.add_option("-t", "--time", action="store", type="int", default=1000,
@@ -120,6 +129,7 @@ if options.magic_steps is not None:
         opts['magic_steps_agg'] = True
     elif options.magic_steps == 'cons':
         opts['magic_steps_cons'] = True
+
 opts['ny'] = options.ny
 opts['least_squares_pi'] = options.least_squares_pi
 opts['quasi_newton'] = options.quasi_newton
@@ -127,6 +137,9 @@ opts['qn_pairs'] = options.qn_pairs
 opts['monotone'] = options.monotone
 opts['print_level'] = options.print_level
 opts['maxtime'] = options.maxtime
+opts['cg_reltol'] = options.cg_reltol
+opts['armijo_factor'] = options.armijo_factor
+opts['pgrad_reltol'] = options.pgrad_reltol
 
 # Set printing standards for arrays
 numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)
@@ -178,36 +191,36 @@ else:
     auglaglogger.addHandler(hndlr)
     auglaglogger.propagate = False
     auglaglogger.setLevel(logging.INFO)
-    if options.print_level >= 5:
+    if options.print_level >= 2:
         auglaglogger.setLevel(logging.DEBUG)
 
     # Configure sbmin logger.
-    if options.print_level >= 2:
+    if options.print_level >= 3:
         sbminlogger = logging.getLogger('nlpy.sbmin')
         sbminlogger.setLevel(logging.INFO)
         sbminlogger.addHandler(hndlr)
         sbminlogger.propagate = False
-        if options.print_level >= 5:
+        if options.print_level >= 4:
             sbminlogger.setLevel(logging.DEBUG)
 
 
     # Configure bqp logger.
-    if options.print_level >= 3:
+    if options.print_level >= 5:
         bqplogger = logging.getLogger('nlpy.bqp')
-        bqplogger.setLevel(logging.DEBUG)
+        bqplogger.setLevel(logging.INFO)
         bqplogger.addHandler(hndlr)
         bqplogger.propagate = False
-        if options.print_level >= 5:
+        if options.print_level >= 6:
             bqplogger.setLevel(logging.DEBUG)
 
 
     # Configure pcg logger
-    if options.print_level >= 4:
+    if options.print_level >= 7:
         pcglogger = logging.getLogger('nlpy.pcg')
         pcglogger.setLevel(logging.DEBUG)
         pcglogger.addHandler(hndlr)
         pcglogger.propagate = False
-        if options.print_level >= 5:
+        if options.print_level >= 8:
             pcglogger.setLevel(logging.DEBUG)
 
 def apply_scaling(nlp):
@@ -222,7 +235,7 @@ for ProblemName in args:
 
     msg = 'You are trying to solve an unconstrained problem\n'
     msg += ' '*25+'with auglag2, you could have better results using\n'
-    msg +=' '*25+'an unconstrained solver such as sbmin.'
+    msg += ' '*25+'an unconstrained solver such as sbmin.'
     if nlp.m == 0:
         nlpylogger.warning(msg)
 
@@ -267,3 +280,8 @@ if not multiple_problems and not error:
     auglaglogger.info('  Total time                   : %-gs' % (total_time))
     auglaglogger.info('  Status                       : %-g' % AUGLAG.status)
     auglaglogger.info('--------------------------------')
+    auglaglogger.info('  Number of Hprod in BQP')
+    auglaglogger.info('     - linesearch              : %-d' % AUGLAG.hprod_bqp_linesearch)
+    auglaglogger.info('     - # linesearch            : %-d' % AUGLAG.nlinesearch)
+    auglaglogger.info('     - linesearch mean         : %-g' % (float(AUGLAG.hprod_bqp_linesearch)/AUGLAG.nlinesearch))
+    auglaglogger.info('     - cg                      : %-d' % AUGLAG.hprod_bqp_cg)

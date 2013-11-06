@@ -11,7 +11,9 @@ from nlpy.tools.exceptions import UserExitRequest
 import numpy as np
 import logging
 from math import sqrt
-from nlpy.model import NLPModel
+from nlpy.model import NLPModel, QPModel
+from nlpy.krylov import SimpleLinearOperator
+from nlpy.tools import DerivativeChecker
 
 __docformat__ = 'restructuredtext'
 
@@ -89,6 +91,9 @@ class SBMINFramework(object):
         self.true_step = None
         self.update_on_rejected_step = kwargs.get('update_on_rejected_step', False)
 
+        # Option for resetting trust-region radius
+        self.reset_radius = kwargs.get('reset_radius', True)
+
         # Options for Nocedal-Yuan backtracking
         self.ny      = kwargs.get('ny', False)
         self.nbk     = kwargs.get('nbk', 5)
@@ -108,7 +113,7 @@ class SBMINFramework(object):
 
         self.abstol  = kwargs.get('abstol', 1.0e-7)
         self.reltol  = kwargs.get('reltol', 1.0e-7)
-        self.maxiter = kwargs.get('maxiter', max(100, 10*self.nlp.n))
+        self.maxiter = kwargs.get('maxiter', 10*self.nlp.n)
         self.verbose = kwargs.get('verbose', False)
         self.total_bqpiter = 0
         self.cgiter = 0
@@ -123,14 +128,20 @@ class SBMINFramework(object):
         self.format0= '     %-5d  %9.2e  %7.1e %7s %5s  %8s  %8s  %4s'
         self.radii = None
 
+        # Initialize some counters for BQP
+        self.hprod_bqp_linesearch = 0
+        self.hprod_bqp_linesearch_fail = 0
+        self.nlinesearch = 0
+        self.hprod_bqp_cg = 0
+
         # Setup the logger. Install a NullHandler if no output needed.
         logger_name = kwargs.get('logger_name', 'nlpy.sbmin')
         self.log = logging.getLogger(logger_name)
         self.log.addHandler(logging.NullHandler())
         if not self.verbose:
             self.log.propagate = False
-        else:
-            nlp.display_basic_info()
+#        else:
+#            nlp.display_basic_info()
 
 
     def project(self, x):
@@ -203,8 +214,9 @@ class SBMINFramework(object):
 
         self.f  = self.f0
 
-        # Reset initial trust-region radius.
-        self.TR.Delta = np.maximum(0.1 * self.pgnorm, .2)
+        if self.reset_radius:
+            # Reset initial trust-region radius.
+            self.TR.Delta = np.maximum(0.1 * self.pgnorm, .2)
         self.radii = [self.TR.Delta]
 
         # Initialize non-monotonicity parameters.
@@ -222,7 +234,7 @@ class SBMINFramework(object):
         status = ''
 
         # Print out header and initial log.
-        if self.iter % 20 == 0 and self.verbose:
+        if self.iter % 20 == 0:
             self.log.info(self.hline)
             self.log.info(self.header)
             self.log.info(self.hline)
@@ -233,6 +245,8 @@ class SBMINFramework(object):
         t = cputime()
 
         while not (exitUser or exitOptimal or exitIter or exitTR):
+            #dercheck = DerivativeChecker(nlp, self.x)
+            #dercheck.check(verbose=True)
 
             self.iter += 1
             self.x_old = self.x.copy()
@@ -248,16 +262,23 @@ class SBMINFramework(object):
             #          m(d) = <g, d> + 1/2 <d, Hd>
             #     s.t.     ll <= d <= uu
             qp = TrustBQPModel(nlp, self.x, self.TR.Delta, self.hprod, gk=self.g)
+            if step_status != 'Rej':
+                #bqptol = max(self.reltol, min(0.1 * bqptol, sqrt(self.pgnorm)))
+                bqptol = max(1e-6, min(0.1 * bqptol, sqrt(self.pgnorm)))
 
-            bqptol = max(1.0e-6, min(0.1 * bqptol, sqrt(self.pgnorm)))
 
-            self.solver = self.TrSolver(qp, qp.grad)
+            self.solver = self.TrSolver(qp, qp.grad, **kwargs)
             self.solver.Solve(reltol=bqptol)
 
             step = self.solver.step
             stepnorm = self.solver.stepNorm
             bqpiter = self.solver.niter
             self.cgiter = self.solver.bqpSolver.cgiter
+            self.hprod_bqp_linesearch += self.solver.bqpSolver.hprod_bqp_linesearch
+            self.hprod_bqp_linesearch += self.solver.bqpSolver.hprod_bqp_linesearch_fail
+            self.nlinesearch += self.solver.bqpSolver.nlinesearch
+            self.hprod_bqp_cg += self.solver.bqpSolver.hprod_bqp_cg
+
             # Obtain model value at next candidate
             m = self.solver.m
 
@@ -389,7 +410,7 @@ class SBMINFramework(object):
                 status = 'usr'
 
             # Print out header, say, every 20 iterations
-            if self.iter % 20 == 0 and self.verbose:
+            if self.iter % 20 == 1 and self.verbose:
                 self.log.info(self.hline)
                 self.log.info(self.header)
                 self.log.info(self.hline)
@@ -542,7 +563,7 @@ class SBMINStructuredLqnFramework(SBMINFramework):
             self.nlp.update(s, yB, ydB)
 
 
-class TrustBQPModel(NLPModel):
+class TrustBQPModel(QPModel):
     """
     Class for defining a Model to pass to BQP solver:
                 min     m(xk + s) = g's + 1/2 s'Hs
@@ -558,51 +579,56 @@ class TrustBQPModel(NLPModel):
         Lvar = np.maximum(nlp.Lvar - xk, -delta)
         Uvar = np.minimum(nlp.Uvar - xk, delta)
 
-        NLPModel.__init__(self, n=nlp.n, m=nlp.m, name='TrustRegionSubproblem',
-                          Lvar=Lvar, Uvar=Uvar)
         self.nlp = nlp
         self.x0 = np.zeros(self.nlp.n)
         self.xk = xk.copy()
         self.delta = delta
-        self.gk = kwargs.get('gk', None)
-        if self.gk == None:
-            self.gk = self.nlp.grad(self.xk)
+        gk = kwargs.get('gk', None)
+        if gk == None:
+            gk = self.nlp.grad(self.xk)
 
-        # private values
-        self._x = np.infty * np.ones(self.nlp.n)
-        self._Hx = None
         self._hprod = hprod
 
-    def obj(self, x, **kwargs):
+        Hk = SimpleLinearOperator(nlp.n, nlp.n,symmetric=True,
+                                  matvec=lambda u: self._hprod(self.xk, None, u))
+
+        QPModel.__init__(self, gk, Hk , name='TrustRegionSubproblem',
+                          Lvar=Lvar, Uvar=Uvar)
+
+        self._x = -np.infty*np.ones(self.n)
+        self._Hx = -np.infty*np.ones(self.n)
+
+    def obj(self, x):
         if not (self._x == x).all():
             self._x = x.copy()
             self._Hx = None
         if self._Hx == None:
-            self._Hx = self._hprod(self.xk, None, x)
+            self._Hx = self.H*x
+            self.Hprod += 1
+        cHx = self._Hx.copy()
+        cHx *= 0.5
+        cHx += self.c
+        return np.dot(cHx,x)
 
+    def grad(self, x):
+        if not (self._x == x).all():
+            self._x = x.copy()
+            self._Hx = None
+        if self._Hx == None:
+            self._Hx = self.H*x
+            self.Hprod += 1
         Hx = self._Hx.copy()
-        Hx *= 0.5
-        Hx += self.gk
-        return np.dot(x, Hx)
+        Hx += self.c
+        return Hx
 
-    def grad(self, x, **kwargs):
-        if not (self._x == x).all():
-            self._x = x.copy()
+    def hess(self, x, z):
+        return self.H
+
+    def hprod(self, x, z, p):
+        if not (self._x == p).all():
+            self._x = p.copy()
             self._Hx = None
         if self._Hx == None:
-            self._Hx = self._hprod(self.xk, None, x)
-
-        g = self._Hx.copy()
-        g += self.gk
-        return g
-
-    def objgrad(self, x, **kwargs):
-        Hx = self._hprod(self.xk, None, x)
-        g = self.gk + Hx
-        Hx *= 0.5
-        Hx += self.gk
-        q = np.dot(x, Hx)
-        return (q, g)
-
-    def hprod(self, x, pi, p, **kwargs):
-        return self._hprod(self.xk, None, p)
+            self._Hx = self.H*p
+            self.Hprod += 1
+        return self._Hx

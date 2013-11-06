@@ -61,6 +61,16 @@ class SlackNLP( NLPModel ):
     such as the index set of constraints with an upper bound, etc., but
     rather performs the evaluations of the constraints for the updated
     model implicitly.
+
+    :parameters:
+        :nlp:  Original NLP to transform to a slack form.
+
+    :keywords:
+        :keep_variable_bounds: set to `True` if you don't want to convert
+                               bounds on variables to inequalities. In this
+                               case bounds are kept as they were in the
+                               original NLP.
+
     """
 
     def __init__(self, nlp, keep_variable_bounds=False, **kwargs):
@@ -84,6 +94,15 @@ class SlackNLP( NLPModel ):
         # Number of slacks for variables with an upper bound
         n_var_up = nlp.nupperB + nlp.nrangeB ; self.n_var_up = n_var_up
 
+        # Number of slacks for the constaints
+        nSlacks_s = n_con_low + n_con_up; self.nSlacks_s = nSlacks_s
+
+        # Create some lists
+        bot = self.original_n; self.sLL = range(bot, bot + nlp.nlowerC)
+        bot += nlp.nlowerC;    self.sLR = range(bot, bot + nlp.nrangeC)
+        bot += nlp.nrangeC;    self.sUU = range(bot, bot + nlp.nupperC)
+        bot += nlp.nupperC;    self.sUR = range(bot, bot + nlp.nrangeC)
+
         # Update effective number of variables and constraints
         if keep_variable_bounds==True:
             n = self.original_n + n_con_low + n_con_up
@@ -95,23 +114,22 @@ class SlackNLP( NLPModel ):
             Uvar[:self.original_n] = nlp.Uvar
 
         else:
+            # Create more lists
+            bot += nlp.nrangeC;    self.tLL = range(bot, bot + nlp.nlowerB)
+            bot += nlp.nlowerB;    self.tLR = range(bot, bot + nlp.nrangeB)
+            bot += nlp.nrangeB;    self.tUU = range(bot, bot + nlp.nupperB)
+            bot += nlp.nupperB;    self.tUR = range(bot, bot + nlp.nrangeB)
+
             n = self.original_n + n_con_low + n_con_up + n_var_low + n_var_up
             m = self.original_m + nlp.nrangeC + n_var_low + n_var_up
             Lvar = np.zeros(n)
             Uvar = +np.infty * np.ones(n)
+            Lvar[:self.original_n] = -np.infty * np.ones(self.original_n)
 
         Lcon = Ucon = np.zeros(m)
 
-        NLPModel.__init__(self, n=n, m=m, name='Slack NLP', Lvar=Lvar, \
+        NLPModel.__init__(self, n=n, m=m, name='Slack-'+nlp.name, Lvar=Lvar, \
                           Uvar=Uvar, Lcon=Lcon, Ucon=Ucon)
-
-        self.hprod = nlp.hprod
-        self.hiprod = self.hiprod
-
-        self.equalC = nlp.equalC ; self.nequalC = nlp.nequalC
-        self.lowerC = nlp.lowerC ; self.nlowerC = nlp.nlowerC
-        self.upperC = nlp.upperC ; self.nupperC = nlp.nupperC
-        self.rangeC = nlp.rangeC ; self.nrangeC = nlp.nrangeC
 
         # Redefine primal and dual initial guesses
         self.original_x0 = nlp.x0[:]
@@ -224,11 +242,6 @@ class SlackNLP( NLPModel ):
         upperC = nlp.upperC ; nupperC = nlp.nupperC
         rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
 
-        mslow = on + self.n_con_low
-        msup  = mslow + self.n_con_up
-        s_low = x[on:mslow]    # len(s_low) = n_con_low
-        s_up  = x[mslow:msup]  # len(s_up)  = n_con_up
-
         c = np.empty(m)
         x_hash = hashlib.sha1(x[:self.original_n]).hexdigest()
         same_x = self._last_x_hash == x_hash
@@ -249,38 +262,16 @@ class SlackNLP( NLPModel ):
         c[om:om+nrangeC] = c[rangeC]
 
         c[equalC] -= nlp.Lcon[equalC]
-        c[lowerC] -= nlp.Lcon[lowerC] ; c[lowerC] -= s_low[:nlowerC]
+        c[lowerC] -= nlp.Lcon[lowerC] ; c[lowerC] -= x[self.sLL]
 
         c[upperC] -= nlp.Ucon[upperC] ; c[upperC] *= -1.
-        c[upperC] -= s_up[:nupperC]
+        c[upperC] -= x[self.sUU]
 
-        c[rangeC] -= nlp.Lcon[rangeC] ; c[rangeC] -= s_low[nlowerC:]
+        c[rangeC] -= nlp.Lcon[rangeC] ; c[rangeC] -= x[self.sLR]
 
         c[om:om+nrangeC] -= nlp.Ucon[rangeC]
         c[om:om+nrangeC] *= -1
-        c[om:om+nrangeC] -= s_up[nupperC:]
-
-        if self.keep_variable_bounds==False:
-            # Add linear constraints corresponding to bounds on original problem
-            lowerB = nlp.lowerB ; nlowerB = nlp.nlowerB ; Lvar = nlp.Lvar
-            upperB = nlp.upperB ; nupperB = nlp.nupperB ; Uvar = nlp.Uvar
-            rangeB = nlp.rangeB ; nrangeB = nlp.nrangeB
-
-            nt = on + self.n_con_low + self.n_con_up
-            ntlow = nt + self.n_var_low
-            t_low = x[nt:ntlow]
-            t_up  = x[ntlow:]
-
-            b = c[om+nrangeC:]
-
-            b[:nlowerB] = x[lowerB] - Lvar[lowerB] - t_low[:nlowerB]
-            b[nlowerB:nlowerB+nrangeB] = x[rangeB] - Lvar[rangeB] \
-                                        - t_low[nlowerB:]
-            b[nlowerB+nrangeB:nlowerB+nrangeB+nupperB] = Uvar[upperB] \
-                                        - x[upperB] - t_up[:nupperB]
-            b[nlowerB+nrangeB+nupperB:] = Uvar[rangeB] - x[rangeB] \
-                                        - t_up[nupperB:]
-
+        c[om:om+nrangeC] -= x[self.sUR]
         return c
 
 
@@ -290,55 +281,44 @@ class SlackNLP( NLPModel ):
         on the variables in the original problem.
         """
 
-        if keep_variable_bounds == False:
-            lowerB = self.lowerB ; nlowerB = self.nlowerB
-            upperB = self.upperB ; nupperB = self.nupperB
-            rangeB = self.rangeB ; nrangeB = self.nrangeB
-
+        if self.keep_variable_bounds == False:
+            # Create some shortcuts for convenience
+            nlp = self.nlp
             n  = self.n ; on = self.original_n
-            mslow = on + nrangeC + self.n_con_low
-            msup  = mslow + self.n_con_up
-            nt = self.original_n + self.n_con_low + self.n_con_up
-            ntlow = nt + self.n_var_low
-
-            t_low  = x[msup:ntlow]
-            t_up   = x[ntlow:]
+            lowerB = nlp.lowerB ; nlowerB = nlp.nlowerB
+            upperB = nlp.upperB ; nupperB = nlp.nupperB
+            rangeB = nlp.rangeB ; nrangeB = nlp.nrangeB
 
             b = np.empty(n + nrangeB)
             b[:n] = x[:]
             b[n:] = x[rangeB]
 
-            b[lowerB] -= self.Lvar[lowerB] ; b[lowerB] -= t_low[:nlowerB]
+            b[lowerB] -= self.Lvar[lowerB] ;
+            b[lowerB] -= x[self.tLL]
 
             b[upperB] -= self.Uvar[upperB] ; b[upperB] *= -1
-            b[upperB] -= t_up[:nupperB]
+            b[upperB] -= x[self.tUU]
 
-            b[rangeB] -= self.Lvar[rangeB] ; b[rangeB] -= t_low[nlowerB:]
+            b[rangeB] -= self.Lvar[rangeB] ; b[rangeB] -= x[self.tLR]
             b[n:]     -= self.Uvar[rangeB] ; b[n:] *= -1
-            b[n:]     -= t_up[nupperB:]
-
+            b[n:]     -= x[self.tUR]
             return b
         else:
             return None
 
 
     def jprod(self, x, v, **kwargs):
-
+        """
+        Evaluate the Jacobian matrix-vector product of all equality
+        constraints of the transformed problem with a vector `v` (J(x).T v).
+        See the documentation of :meth:`jac` for more details on how the
+        constraints are ordered.
+        """
+        # Create some shortcuts for convenience
         nlp = self.nlp
-        on = self.original_n
-        om = self.original_m
-        n = self.n
-        m = self.m
-
-        # List() simply allows operations such as 1 + [2,3] -> [3,4]
-        lowerC = List(nlp.lowerC) ; nlowerC = nlp.nlowerC
-        upperC = List(nlp.upperC) ; nupperC = nlp.nupperC
-        rangeC = List(nlp.rangeC) ; nrangeC = nlp.nrangeC
-        lowerB = List(nlp.lowerB) ; nlowerB = nlp.nlowerB
-        upperB = List(nlp.upperB) ; nupperB = nlp.nupperB
-        rangeB = List(nlp.rangeB) ; nrangeB = nlp.nrangeB
-        nbnds  = nlowerB + nupperB + 2*nrangeB
-        nSlacks = nlowerC + nupperC + 2*nrangeC
+        on = self.original_n; om = self.original_m ; n = self.n ; m = self.m
+        lowerC = nlp.lowerC ; upperC = nlp.upperC ; rangeC = nlp.rangeC
+        nrangeC = nlp.nrangeC
 
         p = np.zeros(m)
 
@@ -348,71 +328,72 @@ class SlackNLP( NLPModel ):
         p[om:om+nrangeC] *= -1.0
 
         # Insert contribution of slacks on general constraints
-        bot = on;       p[lowerC] -= v[bot:bot+nlowerC]
-        bot += nlowerC; p[rangeC] -= v[bot:bot+nrangeC]
-        bot += nrangeC; p[upperC] -= v[bot:bot+nupperC]
-        bot += nupperC; p[om:om+nrangeC] -= v[bot:bot+nrangeC]
+        p[lowerC] -= v[self.sLL]
+        p[rangeC] -= v[self.sLR]
+        p[upperC] -= v[self.sUU]
+        p[om:om+nrangeC] -= v[self.sUR]
 
         if self.keep_variable_bounds==False:
+            # Create some more shortcuts
+            lowerB = nlp.lowerB ; upperB = nlp.upperB ; rangeB = nlp.rangeB
+            nlowerB = nlp.nlowerB ; nupperB = nlp.nupperB ; nrangeB = nlp.nrangeB
+
             # Insert contribution of bound constraints on the original problem
             bot = om+nrangeC; p[bot:bot+nlowerB] += v[lowerB]
-            bot += nlowerB;  p[bot:bot+nrangeB] += v[rangeB]
-            bot += nrangeB;  p[bot:bot+nupperB] -= v[upperB]
-            bot += nupperB;  p[bot:bot+nrangeB] -= v[rangeB]
+            bot += nlowerB;   p[bot:bot+nrangeB] += v[rangeB]
+            bot += nrangeB;   p[bot:bot+nupperB] -= v[upperB]
+            bot += nupperB;   p[bot:bot+nrangeB] -= v[rangeB]
 
             # Insert contribution of slacks on the bound constraints
             bot = om+nrangeC; p[bot:bot+nlowerB] -= v[self.tLL]
-            bot += nlowerB;  p[bot:bot+nrangeB] -= v[self.tLR]
-            bot += nrangeB;  p[bot:bot+nupperB] -= v[self.tUU]
-            bot += nupperB;  p[bot:bot+nrangeB] -= v[self.tUR]
-
+            bot += nlowerB;   p[bot:bot+nrangeB] -= v[self.tLR]
+            bot += nrangeB;   p[bot:bot+nupperB] -= v[self.tUU]
+            bot += nupperB;   p[bot:bot+nrangeB] -= v[self.tUR]
         return p
 
 
     def jtprod(self, x, v, **kwargs):
-
+        """
+        Evaluate the Jacobian-transpose matrix-vector product of all equality
+        constraints of the transformed problem with a vector `v` (J(x).T v).
+        See the documentation of :meth:`jac` for more details on how the
+        constraints are ordered.
+        """
+        # Create some shortcuts for convenience
         nlp = self.nlp
-        on = self.original_n
-        om = self.original_m
-        n = self.n
-        m = self.m
-
-        # List() simply allows operations such as 1 + [2,3] -> [3,4]
-        lowerC = List(nlp.lowerC) ; nlowerC = nlp.nlowerC
-        upperC = List(nlp.upperC) ; nupperC = nlp.nupperC
-        rangeC = List(nlp.rangeC) ; nrangeC = nlp.nrangeC
-        lowerB = List(nlp.lowerB) ; nlowerB = nlp.nlowerB
-        upperB = List(nlp.upperB) ; nupperB = nlp.nupperB
-        rangeB = List(nlp.rangeB) ; nrangeB = nlp.nrangeB
-        nbnds  = nlowerB + nupperB + 2*nrangeB
-        nSlacks = nlowerC + nupperC + 2*nrangeC
+        on = self.original_n ; om = self.original_m ; n = self.n ; m = self.m
+        lowerC = nlp.lowerC ; upperC = nlp.upperC ; rangeC = nlp.rangeC
+        nrangeC = nlp.nrangeC;
 
         p = np.zeros(n)
         vmp = v[:om].copy()
         vmp[upperC] *= -1.0
-        vmp[rangeC] -= v[om:]
+        vmp[rangeC] -= v[om:om+nrangeC]
 
         p[:on] = nlp.jtprod(x[:on], vmp)
 
         # Insert contribution of slacks on general constraints
-        bot = on;       p[on:on+nlowerC]    = -v[lowerC]
-        bot += nlowerC; p[bot:bot+nrangeC]  = -v[rangeC]
-        bot += nrangeC; p[bot:bot+nupperC]  = -v[upperC]
-        bot += nupperC; p[bot:bot+nrangeC]  = -v[om:om+nrangeC]
+        p[self.sLL] = -v[lowerC]
+        p[self.sLR] = -v[rangeC]
+        p[self.sUU] = -v[upperC]
+        p[self.sUR] = -v[om:om+nrangeC]
 
         if self.keep_variable_bounds==False:
+            # Create some more shortcuts
+            lowerB = nlp.lowerB ; upperB = nlp.upperB ; rangeB = nlp.rangeB
+            nlowerB = nlp.nlowerB ; nupperB = nlp.nupperB ; nrangeB = nlp.nrangeB
+
             # Insert contribution of bound constraints on the original problem
             bot = om+nrangeC; p[lowerB] += v[bot:bot+nlowerB]
-            bot += nlowerB;  p[rangeB] += v[bot:bot+nrangeB]
-            bot += nrangeB;  p[upperB] -= v[bot:bot+nupperB]
-            bot += nupperB;  p[rangeB] -= v[bot:bot+nrangeB]
+            bot += nlowerB;   p[rangeB] += v[bot:bot+nrangeB]
+            bot += nrangeB;   p[upperB] -= v[bot:bot+nupperB]
+            bot += nupperB;   p[rangeB] -= v[bot:bot+nrangeB]
 
             # Insert contribution of slacks on the bound constraints
             bot = om+nrangeC; p[self.tLL] -= v[bot:bot+nlowerB]
-            bot += nlowerB;  p[self.tLR] -= v[bot:bot+nrangeB]
-            bot += nrangeB;  p[self.tUU] -= v[bot:bot+nupperB]
-            bot += nupperB;  p[self.tUR] -= v[bot:bot+nrangeB]
-
+            bot += nlowerB;   p[self.tLR] -= v[bot:bot+nrangeB]
+            bot += nrangeB;   p[self.tUU] -= v[bot:bot+nupperB]
+            bot += nupperB;   p[self.tUR] -= v[bot:bot+nrangeB]
         return p
 
 
@@ -440,7 +421,7 @@ class SlackNLP( NLPModel ):
         nSlacks = nlowerC + nupperC + 2*nrangeC
 
         # Initialize sparse Jacobian
-        nnzJ = 2 * self.nnzj + m + nrangeC + nbnds + nrangeB  # Overestimate
+        nnzJ = 2 * self.nlp.nnzj + m + nrangeC + nbnds + nrangeB  # Overestimate
         J = sp(nrow=m, ncol=n, sizeHint=nnzJ)
 
         # Insert contribution of general constraints
@@ -463,23 +444,24 @@ class SlackNLP( NLPModel ):
         J.put(-1.0,      rangeC,  on + nlowerC + nupperC + rrangeC)
         J.put(-1.0, om + rrangeC, on + nlowerC + nupperC + nrangeC + rrangeC)
 
-        # Insert contribution of bound constraints on the original problem
-        bot  = om+nrangeC ; J.put( 1.0, bot + rlowerB, lowerB)
-        bot += nlowerB    ; J.put( 1.0, bot + rrangeB, rangeB)
-        bot += nrangeB    ; J.put(-1.0, bot + rupperB, upperB)
-        bot += nupperB    ; J.put(-1.0, bot + rrangeB, rangeB)
+        if self.keep_variable_bounds==False:
+            # Insert contribution of bound constraints on the original problem
+            bot  = om+nrangeC ; J.put( 1.0, bot + rlowerB, lowerB)
+            bot += nlowerB    ; J.put( 1.0, bot + rrangeB, rangeB)
+            bot += nrangeB    ; J.put(-1.0, bot + rupperB, upperB)
+            bot += nupperB    ; J.put(-1.0, bot + rrangeB, rangeB)
 
-        # Insert contribution of slacks on the bound constraints
-        bot  = om+nrangeC
-        J.put(-1.0, bot + rlowerB, on + nSlacks + rlowerB)
-        bot += nlowerB
-        J.put(-1.0, bot + rrangeB, on + nSlacks + nlowerB + rrangeB)
-        bot += nrangeB
-        J.put(-1.0, bot + rupperB, on + nSlacks + nlowerB + nrangeB + rupperB)
-        bot += nupperB
-        J.put(-1.0, bot + rrangeB, on+nSlacks+nlowerB+nrangeB+nupperB+rrangeB)
-
+            # Insert contribution of slacks on the bound constraints
+            bot  = om+nrangeC
+            J.put(-1.0, bot + rlowerB, on + nSlacks + rlowerB)
+            bot += nlowerB
+            J.put(-1.0, bot + rrangeB, on + nSlacks + nlowerB + rrangeB)
+            bot += nrangeB
+            J.put(-1.0, bot + rupperB, on + nSlacks + nlowerB + nrangeB + rupperB)
+            bot += nupperB
+            J.put(-1.0, bot + rrangeB, on+nSlacks+nlowerB+nrangeB+nupperB+rrangeB)
         return J
+
 
     def jac(self, x):
         """
@@ -518,6 +500,7 @@ class SlackNLP( NLPModel ):
         """
         return self._jac(x, lp=False)
 
+
     def A(self):
         """
         Return the constraint matrix if the problem is a linear program. See the
@@ -525,18 +508,44 @@ class SlackNLP( NLPModel ):
         """
         return self._jac(0, lp=True)
 
+
     def hprod(self, x, y, v, **kwargs):
+        """
+        Evaluate the Hessian vector product of the Lagrangian.
+        """
+        if y is None: y = np.zeros(self.m)
+        # Create some shortcuts for convenience
+        nlp = self.nlp
         on = self.original_n ; om = self.original_m
+        upperC = nlp.upperC ; nupperC = nlp.nupperC
+        rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
+
         Hv = np.zeros(self.n)
-        Hv[:on] = self.nlp.hprod(x[:on], y[:om], v[:on], **kwargs)
+        pi = y[:om].copy()
+        pi[upperC] *= -1.
+        pi[rangeC] -= y[om:om+nrangeC].copy()
+
+        Hv[:on] = self.nlp.hprod(x[:on], pi, v[:on], **kwargs)
         return Hv
 
+
     def hess(self, x, z=None, obj_num=0, *args, **kwargs):
-        H = sp(nrow=self.n, ncol=self.n, symmetric=True, sizeHint=self.nnzh)
+        """
+        Evaluate the Hessian of the Lagrangian.
+        """
+        if z is None: z = np.zeros(self.m)
+        # Create some shortcuts for convenience
+        nlp = self.nlp
         on = self.original_n ; om = self.original_m
-        H[:on, :on] = self.nlp.hess(x[:on], z[:om], obj_num, *args, **kwargs)
+        upperC = nlp.upperC ; nupperC = nlp.nupperC
+        rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
+
+        pi = z[:om].copy()
+        pi[upperC] *= -1.
+
+        pi[rangeC] -= z[om:om+nrangeC].copy()
+
+        H = sp(nrow=self.n, ncol=self.n, symmetric=True, sizeHint=self.nlp.nnzh)
+        H[:on, :on] = self.nlp.hess(x[:on], pi, obj_num, *args, **kwargs)
         return H
 
-    def ghivprod(self, g, v, **kwargs):
-        on = self.original_n
-        return self.nlp.ghivprod(g[:on], v[:on], **kwargs)

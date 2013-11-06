@@ -66,6 +66,15 @@ class LinearOperator:
         return True
 
 
+    def to_array(self):
+        n,m = self.shape
+        H = np.empty((n,m))
+        for j in xrange(m):
+            ej = np.zeros(m) ; ej[j] = 1.0
+            H[:,j] = self * ej
+        return H
+
+
     def __call__(self, *args, **kwargs):
         # An alias for __mul__.
         return self.__mul__(*args, **kwargs)

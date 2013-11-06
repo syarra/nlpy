@@ -21,8 +21,6 @@ import numpy as np
 import logging
 import warnings
 
-
-
 __docformat__ = 'restructuredtext'
 
 class SufficientDecreaseCG(TruncatedCG):
@@ -111,14 +109,13 @@ class BQP(object):
                                       symmetric=True)
 
         # Relative stopping tolerance in projected gradient iterations.
-        self.pgrad_reltol = 0.25
+        self.pgrad_reltol = kwargs.get('pgrad_reltol', 0.25)
 
         # Relative stopping tolerance in conjugate gradient iterations.
-        self.cg_reltol = 0.1
-
+        self.cg_reltol = kwargs.get('cg_reltol', 0.1)
         # Armijo-style linesearch parameter.
-        self.armijo_factor = 1.0e-2
-        
+        self.armijo_factor = kwargs.get('armijo_factor', 1.0e-2)
+
         self.cgiter = 0   # Total number of CG iterations.
 
         self.verbose = kwargs.get('verbose', True)
@@ -128,6 +125,11 @@ class BQP(object):
         self.hline   = '          ' + '-' * self.hlen
         self.format  = '          %-5d  %9.2e  %8.2e  %5d'
         self.format0 = '          %-5d  %9.2e  %8.2e  %5s'
+
+        self.hprod_bqp_linesearch = 0
+        self.hprod_bqp_linesearch_fail = 0
+        self.nlinesearch = 0
+        self.hprod_bqp_cg = 0
 
         # Create a logger for solver.
         self.log = logging.getLogger('nlpy.bqp')
@@ -224,6 +226,8 @@ class BQP(object):
         d is the search direction, qval is q(x) and
         step is the initial steplength.
         """
+        qp = self.qp
+        beforeLS = qp.Hprod
 
         check_feasible = kwargs.get('check_feasible', True)
         if check_feasible:
@@ -238,7 +242,6 @@ class BQP(object):
         if np.dot(g, d) >= 0:
             raise ValueError('Not a descent direction.')
 
-        qp = self.qp
         factor = self.armijo_factor
 
         self.log.debug('Projected linesearch with initial q = %7.1e' % qval)
@@ -299,6 +302,12 @@ class BQP(object):
             xps = x.copy()
             q_xps = qval
         self.log.debug('Projected linesearch ends with q = %7.1e' % q_xps)
+
+        afterLS = qp.Hprod
+        self.hprod_bqp_linesearch += afterLS - beforeLS
+        self.nlinesearch += 1
+        if q_xps == qval:
+            self.hprod_bqp_linesearch_fail += afterLS - beforeLS
         return (xps, q_xps, step)
 
     def projected_gradient(self, x0, g=None, active_set=None, qval=None, **kwargs):
@@ -348,9 +357,7 @@ class BQP(object):
             if iter==1:
                 initial_steplength = 1.0
             else:
-                #print 'step:', step
                 initial_steplength = step
-                #print 'step:', initial_steplength
 
 
             (x, qval, step) = self.projected_linesearch(x, g, -g, qval, step=initial_steplength)
@@ -408,7 +415,8 @@ class BQP(object):
 
         self.log.debug('q before initial x projection = %7.1e' % qp.obj(qp.x0))
         x = self.project(qp.x0)
-        self.log.debug('q after  initial x projection = %7.1e' % qp.obj(x))
+        self.qval0 = qp.obj(x)
+        self.log.debug('q after  initial x projection = %7.1e' % self.qval0)
         lower, upper = self.get_active_set(x)
         iter = 0
 
@@ -416,6 +424,7 @@ class BQP(object):
         g = qp.grad(x)
         pg = self.pgrad(x, g=g, active_set=(lower, upper))
         pgNorm = np.linalg.norm(pg)
+        self.pg0 = pgNorm
 
         stoptol = reltol * pgNorm + abstol
         self.log.debug('Main loop with iter=%d and pgNorm=%g' % (iter, pgNorm))
@@ -443,6 +452,7 @@ class BQP(object):
             # Projected-gradient phase: determine next working set.
             (x, (lower, upper)) = self.projected_gradient(x, g=g,
                                                      active_set=(lower, upper))
+
             g = qp.grad(x)
             qval = qp.obj(x)
             self.log.debug('q after projected gradient = %8.2g' % qval)
@@ -470,6 +480,7 @@ class BQP(object):
             ZHZ = ReducedHessian(self.H, free_vars)
             Zg  = g[free_vars]
 
+            beforeCG = qp.Hprod
             cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=True)
             try:
                 cg.Solve(abstol=1.0e-5, reltol=1.0e-3)
@@ -477,6 +488,8 @@ class BQP(object):
                 msg  = 'CG is no longer making substantial progress'
                 msg += ' (%d its)' % cg.niter
                 self.log.debug(msg)
+            afterCG = qp.Hprod
+            self.hprod_bqp_cg += afterCG - beforeCG
 
             # At this point, CG returned from a clean user exit or
             # because its original stopping test was triggered.
@@ -531,8 +544,12 @@ class BQP(object):
                 free_vars = np.setdiff1d(np.arange(n, dtype=np.int), fixed_vars)
                 ZHZ = ReducedHessian(self.H, free_vars)
                 Zg  = g[free_vars]
+
+                beforeCG = qp.Hprod
                 cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=True)
-                cg.Solve(absol=1.0e-6, reltol=1.0e-4)
+                cg.Solve(abstol=1e-6, reltol=1.0e-4)
+                afterCG = qp.Hprod
+                self.hprod_bqp_cg += afterCG - beforeCG
 
                 msg = 'CG stops (%d its, status = %s)' % (cg.niter, cg.status)
                 self.log.debug(msg)
@@ -567,14 +584,26 @@ class BQP(object):
 
             cgiter = cgiter_1 + cgiter_2  # Total CG iters in this BQP iteration.
             self.cgiter += cgiter         # Total CG iters so far.
-            exitStalling = (np.linalg.norm(x-x_old)) <= 1e-18
+            exitStalling = (np.linalg.norm(x-x_old)) <= 1e-10
             self.log.info(self.format % (iter, qval, pgNorm, cgiter))
 
         self.exitOptimal = exitOptimal
         self.exitIter = exitIter
+        self.exitStalling = exitStalling
+
+        if self.exitOptimal:
+            self.status = 0
+        elif self.exitIter:
+            self.status = -1
+        elif self.exitStalling:
+            self.status = -2
+        else:
+            self.status = -5
+
         self.niter = iter
         self.x = x
         self.qval = qval
+        self.pgNorm = pgNorm
         self.lower = lower
         self.upper = upper
         return

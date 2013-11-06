@@ -1,17 +1,17 @@
 """
-A simple derivative checker.
+simple derivative checker.
 """
 
 import numpy as np
 from numpy.linalg import norm
 from math import sqrt
-import logging
+import sys
+from nlpy.krylov.linop import SimpleLinearOperator
 
 np.random.seed(0)
 macheps = np.finfo(np.double).eps  # Machine epsilon.
 
-
-class DerivativeChecker:
+class DerivativeChecker(object):
 
     def __init__(self, nlp, x, **kwargs):
         """
@@ -22,41 +22,32 @@ class DerivativeChecker:
         `nlp` should be a `NLPModel` and `x` is the point about which we are
         checking the derivative. See the documentation of the `check` method
         for available options.
-
-        :keywords:
-            :logger_name:  Name of a logger for output
         """
         # Tolerance for determining if gradient seems correct.
         self.tol  = kwargs.get('tol', 100*sqrt(macheps))
 
         # Finite difference interval. Scale by norm(x). Use the 1-norm
         # so as not to make small x "smaller".
-        self.step = kwargs.get('step', sqrt(macheps))
-        self.h = self.step * (1 + norm(x, 1))
+        self.step = kwargs.get('step', (macheps/3)**(1./3))
+        self.h = self.step * (1 + norm(x,1))
 
         self.nlp = nlp
-        self.x = x
+        self.x = x.copy()
         self.grad_errs = []
         self.jac_errs = []
         self.hess_errs = []
         self.chess_errs = []
 
-        headfmt = '%4s  %4s        %22s  %22s  %7s'
-        self.head = headfmt % ('Fun', 'Comp', 'Expected',
-                               'Finite Diff', 'Rel.Err')
-        self.d1fmt = '%4d  %4d        %22.15e  %22.15e  %7.1e'
-        head2fmt = '%4s  %4s  %4s  %22s  %22s  %7s'
-        self.head2 = head2fmt % ('Fun', 'Comp', 'Comp', 'Expected',
-                                 'Finite Diff', 'Rel.Err')
-        self.d2fmt = '%4d  %4d  %4d  %22.15e  %22.15e  %7.1e'
-        head3fmt = '%17s %22s  %22s  %7s'
-        self.head3 = head3fmt % ('Directional Deriv', 'Expected',
-                                 'Finite Diff', 'Rel.Err')
-        self.d3fmt = '%17s %22.15e  %22.15e  %7.1e'
-
-        logger_name = kwargs.get('logger_name', 'nlpy.derchk')
-        self.logger = logging.getLogger(logger_name)
-        self.logger.addHandler(logging.NullHandler())
+        headfmt = '%4s  %4s        %22s  %22s  %7s\n'
+        self.head = headfmt % ('Fun','Comp','Expected','Finite Diff','Rel.Err')
+        self.d1fmt = '%4d  %4d        %22.15e  %22.15e  %7.1e\n'
+        head2fmt = '%4s  %4s  %4s  %22s  %22s  %7s\n'
+        self.head2 = head2fmt % ('Fun','Comp','Comp','Expected',
+                                 'Finite Diff','Rel.Err')
+        self.d2fmt = '%4d  %4d  %4d  %22.15e  %22.15e  %7.1e\n'
+        head3fmt = '%17s %22s  %22s  %7s\n'
+        self.head3 = head3fmt % ('Directional Deriv','Expected','Finite Diff','Rel.Err')
+        self.d3fmt = '%17s %22.15e  %22.15e  %7.1e\n'
 
         return
 
@@ -70,44 +61,64 @@ class DerivativeChecker:
             :hess:      Check objective Hessian   (default `True`)
             :jac:       Check constraints Hessian (default `True`)
             :chess:     Check constraints Hessian (default `True`)
-            :store_all: Also store accurate ders  (default `False`)
+            :verbose:   Do not only display inaccurate
+                        derivatives (default `True`)
         """
 
         grad = kwargs.get('grad', True)
         hess = kwargs.get('hess', True)
         jac  = kwargs.get('jac', True)
         chess = kwargs.get('chess', True)
+        verbose = kwargs.get('verbose', True)
         cheap = kwargs.get('cheap_check', False)
-        self.store_all = kwargs.get('store_all', False)
 
         # Skip constraints if problem is unconstrained.
         jac = (jac and self.nlp.m > 0)
         chess = (chess and self.nlp.m > 0)
 
+        if verbose:
+            sys.stderr.write('Gradient checking\n')
+            sys.stderr.write('-----------------\n')
+
         if grad:
             if cheap:
-                self.grad_errs = self.cheap_check_obj_gradient()
+                self.grad_errs, log = self.cheap_check_obj_gradient(verbose)
+                if verbose: self.display(log, self.head3)
             else:
-                self.grad_errs = self.check_obj_gradient()
+                self.grad_errs, log = self.check_obj_gradient(verbose)
+                if verbose: self.display(log, self.head)
         if jac:
-            self.jac_errs = self.check_con_jacobian()
+            self.jac_errs = self.check_con_jacobian(verbose)
+            if verbose: self.display(self.jac_errs, self.head)
         if hess:
-            self.hess_errs = self.check_obj_hessian()
+            self.hess_errs = self.check_obj_hessian(verbose)
+            if verbose: self.display(self.hess_errs, self.head2)
         if chess:
-            self.chess_errs = self.check_con_hessians()
+            self.chess_errs = self.check_con_hessians(verbose)
+            if verbose: self.display(self.chess_errs, self.head2)
 
         return
 
 
-    def cheap_check_obj_gradient(self):
+    def display(self, log, header):
+        name = self.nlp.name
+        nerrs = len(log)
+        sys.stderr.write('Problem %s: Found %d errors.\n' % (name,nerrs))
+        if nerrs > 0:
+            sys.stderr.write(header)
+            sys.stderr.write('-' * len(header) + '\n')
+
+            for err in log:
+                sys.stderr.write(err)
+
+        return
+
+    def cheap_check_obj_gradient(self, verbose=False):
         nlp = self.nlp
         n = nlp.n
         fx = nlp.obj(self.x)
         gx = nlp.grad(self.x)
         h = self.h
-
-        self.logger.debug('Objective gradient (cheap)')
-        self.logger.debug(self.head3)
 
         dx  = np.random.standard_normal(n)
         dx /= norm(dx)
@@ -115,60 +126,65 @@ class DerivativeChecker:
         xph += h*dx
         dfdx = (nlp.obj(xph) - fx)/h      # finite-difference estimate
         gtdx = np.dot(gx, dx)             # expected
-        err  = max(abs(dfdx - gtdx)/(1 + abs(gtdx)),
-                   abs(dfdx - gtdx)/(1 + abs(dfdx)))
+        err  = max( abs(dfdx - gtdx)/(1 + abs(gtdx)), \
+                    abs(dfdx - gtdx)/(1 + abs(dfdx)) )
 
-        errs = (0, 0, gtdx, dfdx, err)
+        line = self.d3fmt % ('', gtdx, dfdx, err)
 
-        if errs[-1] >= self.tol:
-            self.logger.error(self.d1fmt % errs)
+        if verbose:
+            sys.stderr.write(self.head3)
+            sys.stderr.write('-' * len(self.head) + '\n')
+            sys.stderr.write(line)
+
+        if err > self.tol:
+            log = [line]
         else:
-            self.logger.debug(self.d1fmt % errs)
+            log = []
 
-        if self.store_all:
-            return errs
-        else:
-            return []
+        return (err, log)
 
-
-    def check_obj_gradient(self):
+    def check_obj_gradient(self, verbose=False):
         nlp = self.nlp
         n = nlp.n
+        fx = nlp.obj(self.x)
         gx = nlp.grad(self.x)
         h = self.h
-        errs = []
+        log = []
+        err = np.empty(n)
 
-        self.logger.debug('Objective gradient')
-        self.logger.debug(self.head3)
+        if verbose:
+            sys.stderr.write('Objective gradient\n')
+            sys.stderr.write(self.head)
+            sys.stderr.write('-' * len(self.head) + '\n')
 
         # Check partial derivatives in turn.
         for i in xrange(n):
             xph = self.x.copy() ; xph[i] += h
             xmh = self.x.copy() ; xmh[i] -= h
             dfdxi = (nlp.obj(xph) - nlp.obj(xmh))/(2*h)
-            err = abs(gx[i] - dfdxi)/max(1, abs(gx[i]))
+            err[i] = abs(gx[i] - dfdxi)/max(1, abs(gx[i]))
 
-            this_err = (0, i, gx[i], dfdxi, err)
-            if self.store_all or err >= self.tol:
-                errs.append(this_err)
+            line = self.d1fmt % (0, i, gx[i], dfdxi, err[i])
+            if verbose:
+                sys.stderr.write(line)
 
-            if err >= self.tol:
-                self.logger.error(self.d1fmt % this_err)
-            else:
-                self.logger.debug(self.d1fmt % this_err)
+            if err[i] > self.tol:
+                log.append(line)
 
-        return errs
+        return (err, log)
 
 
-    def check_obj_hessian(self):
+    def check_obj_hessian(self, verbose=False):
         nlp = self.nlp
         n = nlp.n
-        Hx = nlp.hess(self.x)
+        Hx = nlp.hess(self.x) #, np.zeros(nlp.m))
+        if isinstance(Hx, SimpleLinearOperator):
+            Hx = Hx.to_array()
         h = self.step
         errs = []
 
-        self.logger.debug('Objective Hessian')
-        self.logger.debug(self.head2)
+        if verbose:
+            sys.stderr.write('Objective Hessian\n')
 
         # Check second partial derivatives in turn.
         for i in xrange(n):
@@ -177,31 +193,32 @@ class DerivativeChecker:
             dgdx = (nlp.grad(xph) - nlp.grad(xmh))/(2*h)
             for j in range(i+1):
                 dgjdxi = dgdx[j]
-                err = abs(Hx[i, j] - dgjdxi)/max(1, abs(Hx[i, j]))
+                err = abs(Hx[i,j] - dgjdxi)/max(1, abs(Hx[i,j]))
 
-                this_err = (0, i, j, Hx[i, j], dgjdxi, err)
-                if self.store_all or err >= self.tol:
-                    errs.append(this_err)
+                line = self.d2fmt % (0, i, j, Hx[i,j], dgjdxi, err)
+                if verbose:
+                    sys.stderr.write(line)
 
-                if err >= self.tol:
-                    self.logger.error(self.d2fmt % this_err)
-                else:
-                    self.logger.debug(self.d2fmt % this_err)
+                if err > self.tol:
+                    errs.append(line)
 
         return errs
 
 
-    def check_con_jacobian(self):
+    def check_con_jacobian(self, verbose=False):
         nlp = self.nlp
         n = nlp.n ; m = nlp.m
         if m == 0: return []   # Problem is unconstrained.
 
         Jx = nlp.jac(self.x)
+        if isinstance(Jx, SimpleLinearOperator):
+            Jx = Jx.to_array()
+
         h = self.step
         errs = []
 
-        self.logger.debug('Constraints Jacobian')
-        self.logger.debug(self.head)
+        if verbose:
+            sys.stderr.write('Constraints Jacobian\n')
 
         # Check partial derivatives of each constraint in turn.
         for i in xrange(n):
@@ -209,52 +226,54 @@ class DerivativeChecker:
             xmh = self.x.copy() ; xmh[i] -= h
             dcdx = (nlp.cons(xph) - nlp.cons(xmh))/(2*h)
             for j in range(m):
-                dcjdxi = dcdx[j]
-                err = abs(Jx[j, i] - dcjdxi) / max(1, abs(Jx[j, i]))
+                dcjdxi = dcdx[j] #(nlp.icons(j, xph) - nlp.icons(j, xmh))/(2*h)
+                err = abs(Jx[j,i] - dcjdxi)/max(1, abs(Jx[j,i]))
 
-                this_err = (j+1, i, Jx[j, i], dcjdxi, err)
-                if self.store_all or err >= self.tol:
-                    errs.append(this_err)
+                line = self.d1fmt % (j+1, i, Jx[j,i], dcjdxi, err)
+                if verbose:
+                    sys.stderr.write(line)
 
-                if err >= self.tol:
-                    self.logger.error(self.d1fmt % this_err)
-                else:
-                    self.logger.debug(self.d1fmt % this_err)
+                if err > self.tol:
+                    errs.append(line)
 
         return errs
 
 
-    def check_con_hessians(self):
+    def check_con_hessians(self, verbose=False):
         nlp = self.nlp
         n = nlp.n ; m = nlp.m
         h = self.step
         errs = []
 
-        self.logger.debug('Constraints Hessians')
-        self.logger.debug(self.head2)
+        if verbose:
+            sys.stderr.write('Constraints Hessians\n')
 
         # Check each Hessian in turn.
         for k in range(m):
             y = np.zeros(m) ; y[k] = -1
-            Hk = nlp.hess(self.x, y, obj_weight=0)
+            hk = nlp.hess(self.x, y, obj_weight=0)
+            if isinstance(hk, SimpleLinearOperator):
+                Hk = hk.to_array()
+            print Hk
 
             # Check second partial derivatives in turn.
             for i in xrange(n):
                 xph = self.x.copy() ; xph[i] += h
                 xmh = self.x.copy() ; xmh[i] -= h
-                dgdx = (nlp.igrad(k, xph) - nlp.igrad(k, xmh)) / (2 * h)
-                for j in xrange(i + 1):
+                if isinstance(hk, SimpleLinearOperator):
+                    dgdx = (nlp.jtprod(xph, y) - nlp.jtprod(xmh, y))/(2*h)
+                else:
+                    dgdx = (nlp.igrad(k, xph) - nlp.igrad(k, xmh))/(2*h)
+                for j in xrange(i+1):
                     dgjdxi = dgdx[j]
-                    err = abs(Hk[i, j] - dgjdxi) / max(1, abs(Hk[i, j]))
+                    err = abs(Hk[i,j] - dgjdxi)/max(1, abs(Hk[i,j]))
 
-                    this_err = (k + 1, i, j, Hk[i, j], dgjdxi, err)
-                    if self.store_all or err >= self.tol:
-                        errs.append(this_err)
+                    line = self.d2fmt % (k+1, i, j, Hk[i,j], dgjdxi, err)
+                    if verbose:
+                        sys.stderr.write(line)
 
-                    if err >= self.tol:
-                        self.logger.error(self.d2fmt % this_err)
-                    else:
-                        self.logger.debug(self.d2fmt % this_err)
+                    if err > self.tol:
+                        errs.append(line)
 
         return errs
 
@@ -263,16 +282,8 @@ if __name__ == '__main__':
 
     import sys
     from nlpy.model import AmplModel
-
-    log = logging.getLogger('nlpy.derchk')
-    log.setLevel(logging.ERROR)
-    fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
-    hndlr = logging.StreamHandler(sys.stdout)
-    hndlr.setFormatter(fmt)
-    log.addHandler(hndlr)
-
     nlp = AmplModel(sys.argv[1])
     print 'Checking at x = ', nlp.x0
     derchk = DerivativeChecker(nlp, nlp.x0)
-    derchk.check()
+    derchk.check(verbose=True)
     nlp.close()
