@@ -24,11 +24,28 @@ from nlpy.tools.timing import cputime
 
 class AugmentedLagrangian(NLPModel):
     """
-    This class is a reformulation of an NLP, used to compute the
-    augmented Lagrangian function, gradient, and approximate Hessian in a
-    method-of-multipliers optimization routine. Slack variables are introduced
-    for inequality constraints and a function that computes the gradient
-    projected on to variable bounds is included.
+    This class is a reformulation of an NLP, used to compute the augmented
+    Lagrangian function, gradient, and Hessian.
+    In case the original NLP has inequalities, Slack variables are introduced
+    for inequality constraints.
+    Note that this class is a matrix-free class.
+
+    Augmented Lagrangian is definied as:
+
+        L(x, pi; rho) := f(x)- <pi,cons(x)> + .5 rho <cons(x),cons(x)>.
+
+    :where:
+        :pi:      current Lagrange multiplier estimates.
+        :rho:     current penalty parameter.
+
+    :parameters:
+
+        :nlp:     original NLPModel to transform into an augemented Lagrangian
+
+    :keywords:
+
+        :rho0:    initial value for the penalty parameter (default: 10.)
+        :pi0:     vector of initial multipliers (default: all 0)
     """
 
     def __init__(self, nlp, **kwargs):
@@ -38,16 +55,14 @@ class AugmentedLagrangian(NLPModel):
             self.nlp = MFSlackNLP(nlp, keep_variable_bounds=True, **kwargs)
         else: self.nlp = nlp
 
+        NLPModel.__init__(self, n=self.nlp.n, m=0, name='Al-'+self.nlp.name,
+                          Lvar=self.nlp.Lvar, Uvar=self.nlp.Uvar)
+
         self.rho_init = kwargs.get('rho_init',10.)
         self.rho = self.rho_init
 
         self.pi0 = np.zeros(self.nlp.m)
         self.pi = self.pi0.copy()
-
-        self.n = self.nlp.n
-        self.m = 0
-        self.Lvar = self.nlp.Lvar
-        self.Uvar = self.nlp.Uvar
         self.x0 = self.nlp.x0
 
     def obj(self, x, **kwargs):
@@ -87,22 +102,9 @@ class AugmentedLagrangian(NLPModel):
         Lagrangian with arbitrary vector v.
         """
         nlp = self.nlp
-        on = nlp.original_n
-        om = nlp.original_m
-        upperC = nlp.upperC ; nupperC = nlp.nupperC
-        rangeC = nlp.rangeC ; nrangeC = nlp.nrangeC
-        w = np.zeros(self.n)
-
-        pi_bar = self.pi[:om].copy()
-        pi_bar[upperC] *= -1.0
-        pi_bar[rangeC] -= self.pi[om:].copy()
-
         cons = nlp.cons(x)
-        mu = cons[:om].copy()
-        mu[upperC] *= -1.0
-        mu[rangeC] -= cons[om:].copy()
 
-        w[:on] = nlp.hprod(x[:on],-pi_bar + self.rho * mu, v[:on])
+        w = nlp.hprod(x,-self.pi + self.rho * cons, v)
         J = nlp.jac(x)
         w += self.rho * (J.T * (J * v))
         return w
@@ -273,19 +275,21 @@ class AugmentedLagrangianFramework(object):
 
     :keywords:
 
-        :x0:           starting point                    (default nlp.x0)
-        :reltol:       relative stopping tolerance       (default `nlp.stop_d`)
-        :abstol:       absolute stopping tolerance       (default 1.0e-6)
-        :maxiter:      maximum number of iterations      (default max(1000,10n))
-        :ny:           apply Nocedal/Yuan linesearch     (default False)
-        :nbk:          max number of backtracking steps in Nocedal/Yuan
-                       linesearch                        (default 5)
-        :monotone:     use monotone descent strategy     (default False)
-        :nIterNonMono: number of iterations for which non-strict descent can
-                       be tolerated if monotone=False    (default 25)
-        :logger_name:  name of a logger object that can be used in the post
-                       iteration                         (default None)
-        :verbose:      print log if True                 (default True)
+        :x0:               starting point                    (default nlp.x0)
+        :reltol:           relative stopping tolerance       (default `nlp.stop_d`)
+        :abstol:           absolute stopping tolerance       (default 1.0e-6)
+        :maxiter:          maximum number of iterations      (default max(1000,10n))
+        :ny:               apply Nocedal/Yuan linesearch     (default False)
+        :nbk:              max number of backtracking steps in Nocedal/Yuan
+                           linesearch                        (default 5)
+        :monotone:         use monotone descent strategy     (default False)
+        :nIterNonMono:     number of iterations for which non-strict descent can
+                           be tolerated if monotone=False    (default 25)
+        :least_squares_pi: use of least squares to initialize Lagrange multipliers 
+                           (default False)
+        :logger_name:      name of a logger object that can be used in the post
+                           iteration                         (default None)
+        :verbose:          print log if True                 (default True)
 
     Once a `AugmentedLagrangianFramework` object has been instantiated and the
     problem is set up, solve problem by issuing a call to `AUGLAG.solve()`.
@@ -361,6 +365,13 @@ class AugmentedLagrangianFramework(object):
         self.hline  = '-' * self.hlen
         self.format = '%-5d  %8.1e  %8.1e  %8.1e  %8.1e  %8.1e  %8.1e  %5d'
         self.format0= '%-5d  %8.1e  %8.1e  %8s  %8s  %8s  %8s  %5s'
+
+        # Initialize some counters for counting number of Hprod used in
+        # BQP linesearch and CG.
+        self.hprod_bqp_linesearch = 0
+        self.hprod_bqp_linesearch_fail = 0
+        self.nlinesearch = 0
+        self.hprod_bqp_cg = 0
 
         # Setup the logger. Install a NullHandler if no output needed.
         logger_name = kwargs.get('logger_name', 'nlpy.auglag')
@@ -501,7 +512,7 @@ class AugmentedLagrangianFramework(object):
         """
         Solve the optimization problem and return the solution.
         """
-        original_n = self.alprob.nlp.original_n
+        on = self.alprob.nlp.original_n
 
         # Move starting point into the feasible box
         self.x = self.project(self.x)
@@ -519,8 +530,8 @@ class AugmentedLagrangianFramework(object):
         m_step_init = self.magical_step(self.x, dphi)
         self.x += m_step_init
 
-        dL = self.alprob.dual_feasibility(self.x)
-        self.f = self.f0 = self.alprob.nlp.obj(self.x[:original_n])
+        dL = self.alprob.grad(self.x)
+        self.f = self.f0 = self.alprob.nlp.obj(self.x[:on])
 
         PdL = self.project_gradient(self.x,dL)
         Pmax = np.max(np.abs(PdL))
@@ -530,16 +541,20 @@ class AugmentedLagrangianFramework(object):
         # unconstrained
         if self.alprob.nlp.m == 0:
             max_cons = 0.
+            reset_radius = False
         else:
             max_cons = np.max(np.abs(self.alprob.nlp.cons(self.x)))
             cons_norm_ref = max_cons
+            reset_radius = True
 
         self.omega = self.omega_init
         self.eta = self.eta_init
         self.omega_opt = self.omega_rel * self.pg0 + self.omega_abs
         self.eta_opt = self.eta_rel * max_cons + self.eta_abs
 
+        # Initialize a trust region framework and radius
         tr = TR(eta1=1.0e-4, eta2=.9, gamma1=.25, gamma2=2.5)
+        #tr.Delta = np.maximum(0.1 * self.pgnorm, .2)
 
         self.iter = 0
         self.inner_fail_count = 0
@@ -565,15 +580,21 @@ class AugmentedLagrangianFramework(object):
 
             # Perform bound-constrained minimization
             SBMIN = self.innerSolver(self.alprob, tr, TRSolver,
-                                     reltol=self.omega, x0=self.x,
-                                     #maxiter=self.max_inner_iter/10., verbose=True,
-                                     update_on_rejected_step=self.update_on_rejected_step, **kwargs)
+                                     reltol=self.omega,
+                                     x0=self.x,
+                                     maxiter=self.max_inner_iter/10., verbose=True,
+                                     update_on_rejected_step=self.update_on_rejected_step,
+                                     reset_radius=reset_radius, **kwargs)
 
-            SBMIN.Solve()
+            SBMIN.Solve(**kwargs)
             self.x = SBMIN.x.copy()
             self.niter_total += SBMIN.iter
+            self.hprod_bqp_linesearch += SBMIN.hprod_bqp_linesearch
+            self.hprod_bqp_linesearch_fail += SBMIN.hprod_bqp_linesearch_fail
+            self.nlinesearch += SBMIN.nlinesearch
+            self.hprod_bqp_cg += SBMIN.hprod_bqp_cg
 
-            dL = self.alprob.dual_feasibility(self.x)
+            dL = self.alprob.grad(self.x)
             PdL = self.project_gradient(self.x,dL)
             Pmax_new = np.max(np.abs(PdL))
             convals_new = self.alprob.nlp.cons(self.x)
@@ -585,7 +606,7 @@ class AugmentedLagrangianFramework(object):
             else:
                 max_cons_new = np.max(np.abs(convals_new))
 
-            self.f = self.alprob.nlp.obj(self.x[:original_n])
+            self.f = self.alprob.nlp.obj(self.x[:on])
             self.pgnorm = Pmax_new
 
             # Print out header, say, every 10 iterations (for readability)
@@ -643,7 +664,6 @@ class AugmentedLagrangianFramework(object):
                 self.omega = self.omega_opt
             if self.eta < self.eta_opt:
                 self.eta = self.eta_opt
-
 
             try:
                 self.PostIteration()
