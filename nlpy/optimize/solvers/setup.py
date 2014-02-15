@@ -11,6 +11,7 @@ def configuration(parent_package='',top_path=None):
                         'nlpy_ldfp.py',
                         'nlpy_reglp.py',
                         'nlpy_regqp.py',
+                        'nlpy_regsqp.py',
                         'nlpy_funnel.py',
                         'nlpy_elastic.py'])
 
