@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from pykrylov.linop.blkop import BlockLinearOperator
-from pykrylov.linop import IdentityOperator
-from pykrylov.minres import Minres as KSolver
+from pykrylov.linop import ZeroOperator, IdentityOperator, LinearOperator
+from pykrylov.minres import Minres as IterativeSolver
 from nlpy.model import MFAmplModel
 from nlpy.tools.norms import norm2, norm_infty
 from nlpy.tools.timing import cputime
@@ -10,19 +10,20 @@ try:
     from nlpy.linalg.pyma57 import PyMa57Context as LBLContext
 except:
     from nlpy.linalg.pyma27 import PyMa27Context as LBLContext
+from nlpy.optimize.solvers.lbfgs import LBFGS
+from nlpy.tools.exceptions import UserExitRequest
 from pysparse import spmatrix
 import numpy as np
-import logging
+import logging, sys
 
 class RegSQPSolver(object):
     """
     A regularized SQP method for degenerate equality-constrained optimization.
     """
 
-
     def __init__(self, nlp, **kwargs):
         """
-        Instantiate a trust-funnel framework for a given equality-constrained
+        Instantiate a regularized SQP framework for a given equality-constrained
         problem.
 
         :keywords:
@@ -31,8 +32,6 @@ class RegSQPSolver(object):
             :reltol: relative required accuracy for || [g-J'y ; c] ||
             :theta: sufficient decrease condition for the inner iterations
             :itermax: maximum number of iterations allowed
-            :iterative_solver: solver used to find steps (0=minres, 1=lsmr) #LSMR not supported yet
-            :maxit_refine: maximum number of iterative refinements per solve
         """
         self.nlp = nlp
         n = self.nlp.n
@@ -44,9 +43,7 @@ class RegSQPSolver(object):
         self.reltol = kwargs.get('reltol', 1.0e-8)
         self.theta = kwargs.get('theta',0.99)
         self.itermax = kwargs.get('itermax', max(100, 10*nlp.n))
-        self.direct = kwargs.get('direct', True)
-        self.iterative_solver = kwargs.get('iterative_solver', 0)
-        self.krylovtol = kwargs.get('krylovtol', 1.0e-6)
+        self.save_g = kwargs.get('save_g', False)
 
         # Grab logger if one was configured.
         logger_name = kwargs.get('logger_name', 'regsqp.solver')
@@ -65,35 +62,23 @@ class RegSQPSolver(object):
         if self.rho < 0.0: self.rho = 0.0
         if self.delta < 0.0: self.delta = 0.0
 
-        # Initialize coefficient matrix.
+        # Allocate room for coefficient matrix.
         self.K = self.initialize_coefficient_matrix()
 
         # System solve method.
-        if self.direct:
-            Knp = self.K.to_array()
-            K = np_to_ll(Knp)
-            self.LBL = LBLContext(K, factorize=False, sqd=True)
-        self.krylov_solver = KSolver(self.K, reltol=self.krylovtol, logger=self.log)
+        Knp = self.K.to_array()
+        K = np_to_ll(Knp)
+        self.LBL = LBLContext(K, factorize=False, sqd=True)
 
         # Initialize format strings for display
         fmt_hdr = '%-4s  %9s' + '  %-8s'*3
         self.header = fmt_hdr % ('Iter', 'Obj', 'Delta', 'Rho', 'rNorm')
         self.format  = '%-4d  %9.2e' + '  %-8.2e' * 3
 
-#        self.mu_history = []
-#        self.cond_history = []
-#        self.berr_history = []
-#        self.derr_history = []
-#        self.nrms_history = []
-#        self.lres_history = []
-
-#        self.condest = kwargs.get('condest', False)
-#        self.condest_history = []
-#        self.normest_history = []
-
-#        if self.verbose: self.display_stats()
-
         return
+
+    def hess(self, x, z=None, **kwargs):
+        return self.nlp.hess(x,z,**kwargs)
 
     def initialize_coefficient_matrix(self):
         # [ H+ρI    J' ] [∆x] = [ -g + J'y ]
@@ -111,9 +96,15 @@ class RegSQPSolver(object):
         return K
 
     def update_linear_system(self, x, y, rho, delta, **kwargs):
+        # [ H+ρI    J' ] [∆x] = [ -g + J'y ]
+        # [    J     -δI ] [∆y]    [ -c       ]
+        #
+        # For now H is the exact Hessian of the Lagrangian
+        # (not an approximation of it).
+
         # Some shortcuts for convenience
         In = self.In ; Im = self.Im
-        H = self.nlp.hess(x, y) ; J = self.nlp.jac(x)
+        H = self.hess(x, y) ; J = self.nlp.jac(x)
         self.K[0, 0] = H + rho*In
         self.K[0, 1] = J.T
         self.K[1, 1] = -delta*Im
@@ -138,7 +129,6 @@ class RegSQPSolver(object):
         nlp = self.nlp ; n = nlp.n ; m = nlp.m
         dphi = np.zeros(n+m)
         c = nlp.cons(x) ; J = nlp.jac(x)
-        print J.to_array()
         dphi[:n] = nlp.grad(x) - J.T*(y-c/delta) + rho*(x-x0)
         dphi[n:] = -c
         return dphi
@@ -168,30 +158,29 @@ class RegSQPSolver(object):
             alpha /= 1.2
             xTrial = x + alpha * dy ; yTrial = y + alpha * dy
             phiTrial = self.phi(xTrial, yTrial, rho, delta, x)
+
+        self.log.debug('alpha=%3.2e'%alpha)
         return (xTrial, yTrial, phiTrial, alpha)
 
     def solveSystem(self, rhs, itref_threshold=1.0e-5, nitrefmax=5, **kwargs):
 
         self.log.debug('Solving linear system')
 
-        if self.direct:
-            # Convert Numpy matrix to ll_mat for pyMA27 or pyMA57
-            Knp = self.K.to_array()
-            K = np_to_ll(Knp)
+        # Convert Numpy matrix to ll_mat for pyMA27 or pyMA57
+        Knp = self.K.to_array()
+        K = np_to_ll(Knp)
 
-            # Factorize system.
-            self.LBL.factorize(K)
+        # Factorize system.
+        self.LBL.factorize(K)
 
-            # TODO:
-            # Add a correction of the inertia, by increasing the regularization
-            # parameters.
+        # TODO:
+        # Add a correction of the inertia, by increasing the regularization
+        # parameters.
+        self.LBL.solve(rhs)
+        self.LBL.refine(rhs, tol=itref_threshold, nitref=nitrefmax)
 
-            self.LBL.solve(rhs)
-            self.LBL.refine(rhs, tol=itref_threshold, nitref=nitrefmax)
-            return self.LBL.x
-        else:
-            self.krylov_solver.solve(rhs, **kwargs)
-            return self.krylov_solver.bestSolution
+        self.log.debug('residual norm: %3.2e'%norm2(self.LBL.residual))
+        return self.LBL.x
 
     def test_solveSystem(self):
 
@@ -212,21 +201,27 @@ class RegSQPSolver(object):
 
         # Get initial objective value
         self.f0 = nlp.obj(x)
+        self.x_old = x.copy()
+        self.g_old = nlp.grad(x)
 
-        # Allocate room for right-hand side of linear systems.
+        # Initialize right-hand side and coefficient matrix
+        # of linear systems
         rhs = self.initialize_rhs()
+
+        self.update_linear_system(x, y, rho, delta, **kwargs)
 
         g = nlp.grad(x)
         J = nlp.jac(x)
         c = nlp.cons(x)
-        optimal = ( max(norm_infty(g-J.T*y),norm_infty(c))<= abstol)
+        optimal = ( max(norm_infty(g-J.T*y),norm_infty(c))<= abstol )
+
 
         finished = False
         iter = 0
-
         setup_time = cputime()
-
         finished = False or optimal
+
+        self.log.info(self.format%(iter, self.f0,self.rho, self.delta,0))
 
         # Main loop.
         while not finished:
@@ -242,14 +237,11 @@ class RegSQPSolver(object):
             self.update_linear_system(x, y, rho, delta, **kwargs)
             self.update_rhs(rhs, g, J, y, c)
 
-
-
             step = self.solveSystem(rhs)
             (dx, dy) = self.get_dxy(step)
 
             # Step 3
-            epsilon = 10*delta # a better way to set epsilon dynamically
-
+            epsilon = 10*delta # a better way to set epsilon dynamically ?
 
             # Step 4: Inner Iterations
             xTrial = x + dx ; yTrial = y + dy
@@ -258,7 +250,9 @@ class RegSQPSolver(object):
             Fnorm = max(norm_infty(g-J.T*y),norm_infty(c))
             FTrialnorm = max(norm_infty(gTrial-JTrial.T*yTrial),norm_infty(cTrial))
 
-            while FTrialnorm > theta*Fnorm + epsilon:
+            inner_iter = 0
+            while FTrialnorm > theta*Fnorm + epsilon and inner_iter < 20:
+                self.log.debug('Entering inner iterations loop')
 
                 # Step 3: Compute a new direction p_j
                 self.update_linear_system(xTrial, yTrial, rho, delta, **kwargs)
@@ -274,7 +268,15 @@ class RegSQPSolver(object):
                 gTrial = nlp.grad(xTrial) ; JTrial = nlp.jac(xTrial)
                 cTrial = nlp.cons(xTrial)
                 FTrialnorm = max(norm_infty(gTrial-JTrial.T*yTrial),norm_infty(cTrial))
+                inner_iter+=1
 
+                if FTrialnorm <= theta*Fnorm + epsilon or inner_iter >= 20:
+                        self.log.debug('Leaving inner iterations loop')
+                else:
+                    try:
+                        self.PostInnerIteration(xTrial, gTrial)
+                    except UserExitRequest:
+                        self.status = -3
 
             # Update values of the new iterate and compute stopping criterion.
             x = xTrial.copy()
@@ -282,8 +284,12 @@ class RegSQPSolver(object):
             g = nlp.grad(x)
             J = nlp.jac(x)
             c = nlp.cons(x)
-            optimal = ( max(norm_infty(g-J.T*y),norm_infty(c))<= abstol)
+            optimal = ( max(norm_infty(g-J.T*y),norm_infty(c))<= abstol )
 
+            try:
+                self.PostIteration(x, g)
+            except UserExitRequest:
+                self.status = -3
 
             # Display initial header every so often.
             if iter % 50 == 0:
@@ -303,6 +309,7 @@ class RegSQPSolver(object):
                 continue
 
             iter += 1
+            self.log.info(self.format%(iter, nlp.obj(x),self.rho, self.delta,0))
 
         solve_time = cputime() - setup_time
 
@@ -328,6 +335,115 @@ class RegSQPSolver(object):
         dy = -step[n:]
         return (dx, dy)
 
+    def PostIteration(self, x, g, **kwargs):
+        """
+        Override this method to perform additional work at the end of a
+        major iteration. For example, use this method to restart an
+        approximate Hessian.
+        """
+        return None
+
+    def PostInnerIteration(self, x, g, **kwargs):
+        """
+        Override this method to perform additional work at the end of a
+        minor iteration. For example, use this method to restart an
+        approximate Hessian.
+        """
+        return None
+
+
+class RegSQPIterativeSolver( RegSQPSolver ):
+    """
+    A regularized SQP method for degenerate equality-constrained optimization.
+    Using an iterative method to solve the system.
+    """
+
+    def __init__(self, nlp, iterative_solver, **kwargs):
+        """
+        Instantiate a regularized SQP iterative framework for a given equality-constrained
+        problem.
+
+        :keywords:
+            :nlp: `NLPModel` instance.
+            :abstol: Absolute stopping tolerance
+            :reltol: relative required accuracy for || [g-J'y ; c] ||
+            :theta: sufficient decrease condition for the inner iterations
+            :itermax: maximum number of iterations allowed
+            :maxit_refine: maximum number of iterative refinements per solve
+            :iterative_solver: solver used to find steps (0=minres, 1=lsmr) #LSMR not supported yet
+            :maxit_refine: maximum number of iterative refinements per solve
+        """
+
+        RegSQPSolver.__init__(self, nlp, **kwargs)
+        self.krylovtol = kwargs.get('krylovtol', 1.0e-6)
+
+        # System solve method.
+        self.krylov_solver = iterative_solver(self.K, reltol=self.krylovtol, logger=self.log)
+        return
+
+    def solveSystem(self, rhs, itref_threshold=1.0e-5, nitrefmax=5, **kwargs):
+
+        self.log.debug('Solving linear system')
+        self.krylov_solver.solve(rhs, **kwargs)
+        return self.krylov_solver.bestSolution
+
+    def test_solveSystem(self):
+
+        rhs = np.sum(self.K.to_array(), axis=1)
+        step = self.solveSystem(rhs, itref_threshold=1.0e-5, nitrefmax=5)
+        print 'Yeah'
+        print step
+        return
+
+
+class RegSQPBFGSSolver(RegSQPSolver):
+    """
+    Use BFGS quasi Newton Hessian approximation.
+    """
+    def __init__(self, nlp, **kwargs):
+        self.Hessapp = LBFGS(nlp.n, npairs=kwargs.get('qn_pairs',5), scaling=True, **kwargs)
+        super(RegSQPBFGSSolver, self).__init__(nlp, **kwargs)
+        print 'here'
+
+    def hprod(self, x, z, v, **kwargs):
+        """
+        Compute the Hessian-vector product of the Hessian of the augmented
+        Lagrangian with arbitrary vector v.
+        """
+        w = self.Hessapp.matvec(v)
+        return w
+
+    def hreset(self):
+        self.Hessapp.restart()
+        return
+
+    def hess(self, x, z=None, **kwargs):
+        return LinearOperator(self.nlp.n, self.nlp.n, symmetric=True,
+                         matvec=lambda u: self.hprod(x,z,u,**kwargs))
+
+    def PostIteration(self, x, g, **kwargs):
+        """
+        This method resets the limited-memory quasi-Newton Hessian after
+        every outer iteration.
+        """
+        self.x_old = x.copy()
+        self.g_old = g.copy()
+        self.hreset()
+
+    def PostInnerIteration(self, x, g, **kwargs):
+        """
+        This method updates the limited-memory quasi-Newton Hessian by appending
+        the most recent (s,y) pair to it and possibly discarding the oldest one
+        if all the memory has been used.
+        """
+        s = x - self.x_old
+        y = g - self.g_old
+        self.Hessapp.store(s, y)
+
+        self.x_old = x.copy()
+        self.g_old = g.copy()
+
+
 def np_to_ll(npMat):
     llMat = spmatrix.ll_mat_sym(npMat.shape[0])
     for i, row in enumerate(npMat):
@@ -351,19 +467,32 @@ def test_merit_function(solver, x,y,dx,dy,rho, delta):
 
 if __name__ == '__main__' :
 
+
+    # Create root logger.
+    log = logging.getLogger('regsqp')
+    log.setLevel(logging.INFO)
+    fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
+    hndlr = logging.StreamHandler(sys.stdout)
+    hndlr.setFormatter(fmt)
+    log.addHandler(hndlr)
+
+    # Configure the solver logger.
+    sublogger = logging.getLogger('regsqp.solver')
+    sublogger.setLevel(logging.DEBUG)
+    sublogger.addHandler(hndlr)
+    sublogger.propagate = False
+
     filename='/Users/syarra/data/CuteExamples/nl_folder/hs006.nl'
     nlp = MFAmplModel(filename)         # Create a model
     solver = RegSQPSolver(nlp)
 
     # Create the coefficient matrix
-    solver.initialize_coefficient_matrix()
+    solver.K = solver.initialize_coefficient_matrix()
     print solver.K.to_array()
 
     print np_to_ll(solver.K.to_array())
 
     solver.test_solveSystem()
-
-    solver.direct = False
     solver.update_linear_system(nlp.x0, nlp.pi0, 2, 2)
     print solver.K.to_array()
     solver.test_solveSystem()
@@ -372,8 +501,16 @@ if __name__ == '__main__' :
     dx=np.array([0.2,0.2]) ; dy=np.array([0.3])
     delta=10 ; rho=5
     test_merit_function(solver, x,y,dx,dy,rho,delta)
-    solver.direct = False
     solver.solve()
     print solver.status
+
+    iterative_solver = RegSQPIterativeSolver(nlp, IterativeSolver)
+    iterative_solver.solve()
+    print iterative_solver.status
+
+    bfgs_solver = RegSQPBFGSSolver(nlp)
+    bfgs_solver.solve()
+    print bfgs_solver.status
+
 
     nlp.close()                              # Close connection with model
