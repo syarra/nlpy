@@ -3,8 +3,10 @@
 from __future__ import with_statement # Required in 2.5
 from nlpy import __version__
 from nlpy.model import MFAmplModel
-from nlpy.optimize.solvers.tron import TronFramework
-from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianTronFramework
+from nlpy.optimize.solvers.tron import TronFramework, TronLqnFramework
+from nlpy.optimize.solvers.auglag2 import AugmentedLagrangianTronFramework, \
+                                                                    AugmentedLagrangianPartialLbfgsTronFramework, \
+                                                                    AugmentedLagrangianPartialLsr1TronFramework
 from nlpy.tools.timing import cputime
 from nlpy.tools.logs import config_logger
 from optparse import OptionParser
@@ -32,8 +34,15 @@ def pass_to_auglag(nlp, **kwargs):
     qn = kwargs.get('quasi_newton',None)
     t = cputime()
 
-    auglag = AugmentedLagrangianTronFramework(nlp, TronFramework,
-                    **kwargs)
+    if qn == None:
+        auglag = AugmentedLagrangianTronFramework(nlp, TronFramework,
+                       **kwargs)
+    elif qn == 'LBFGS':
+        auglag = AugmentedLagrangianPartialLbfgsTronFramework(nlp, TronLqnFramework,
+                       **kwargs)
+    elif qn == 'LSR1':
+        auglag = AugmentedLagrangianPartialLsr1TronFramework(nlp, TronLqnFramework,
+                       **kwargs)
 
     t_setup = cputime() - t    # Setup time.
 
@@ -71,6 +80,9 @@ parser.add_option("-p", "--print_level", action="store", type="int",
 parser.add_option("-o", "--output_file", action="store", type="string",
                   default=None, dest="output_file",
                   help="Redirect iterations detail in an output file")
+parser.add_option("-q", "--quasi_newton", action="store", type="string",
+                  default=None, dest="quasi_newton",
+                  help="LBFGS or LSR1")
 
 # Parse command-line options
 (options, args) = parser.parse_args()
@@ -82,6 +94,7 @@ if options.maxiter is not None:
 opts['least_squares_pi'] = options.least_squares_pi
 opts['print_level'] = options.print_level
 opts['maxtime'] = options.maxtime
+opts['quasi_newton'] = options.quasi_newton
 
 # Set printing standards for arrays
 numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)

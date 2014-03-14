@@ -12,7 +12,6 @@ import sys, logging, os
 
 def pass_to_tron(nlp, **kwargs):
     qn = kwargs.get('quasi_newton', None)
-
     t = cputime()
     if qn == None:
         tron = TronFramework(nlp, **kwargs)
@@ -56,7 +55,6 @@ if options.maxit is not None:
 opts['reltol'] = options.reltol
 opts['abstol'] = options.abstol
 opts['quasi_newton'] = options.quasi_newton
-
 
 # Set printing standards for arrays
 numpy.set_printoptions(precision=3, linewidth=80, threshold=10, edgeitems=3)

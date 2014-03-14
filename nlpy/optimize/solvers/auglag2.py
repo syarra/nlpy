@@ -168,7 +168,7 @@ class AugmentedLagrangianLsr1(AugmentedLagrangianQuasiNewton):
 
 class AugmentedLagrangianPartialQuasiNewton(AugmentedLagrangianQuasiNewton):
     """
-    Only apply the Quasi Newton approximation to the second order terms of the 
+    Only apply the Quasi Newton approximation to the second order terms of the
     Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
     """
     def __init__(self, nlp, **kwargs):
@@ -185,7 +185,7 @@ class AugmentedLagrangianPartialQuasiNewton(AugmentedLagrangianQuasiNewton):
 
 class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianPartialQuasiNewton):
     """
-    Only apply the LBFGS approximation to the second order terms of the 
+    Only apply the LBFGS approximation to the second order terms of the
     Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
     """
     def __init__(self, nlp, **kwargs):
@@ -196,7 +196,7 @@ class AugmentedLagrangianPartialLbfgs(AugmentedLagrangianPartialQuasiNewton):
 
 class AugmentedLagrangianPartialLsr1(AugmentedLagrangianPartialQuasiNewton):
     """
-    Only apply the LSR1 approximation to the second order terms of the 
+    Only apply the LSR1 approximation to the second order terms of the
     Hessian of the augmented Lagrangian, i.e. not the pJ'J term.
     """
     def __init__(self, nlp, **kwargs):
@@ -294,7 +294,7 @@ class AugmentedLagrangianFramework(object):
 
         self.f0 = self.f = None
 
-        # Maximum number of total inner iterations 
+        # Maximum number of total inner iterations
         self.max_inner_iter = kwargs.get('max_inner_iter', 100*self.alprob.nlp.original_n)
 
         self.update_on_rejected_step = False
@@ -320,8 +320,8 @@ class AugmentedLagrangianFramework(object):
 
     def project(self, x, **kwargs):
         """
-        Project the given x vector on to the bound-constrained space and 
-        return the result. This function is useful when the starting point 
+        Project the given x vector on to the bound-constrained space and
+        return the result. This function is useful when the starting point
         of the optimization is not initially within the bounds.
         """
         return np.maximum(np.minimum(x,self.alprob.Uvar),self.alprob.Lvar)
@@ -342,9 +342,9 @@ class AugmentedLagrangianFramework(object):
 
     def magical_step(self, x, g, **kwargs):
         """
-        Compute a "magical step" to improve the convergence rate of the 
-        inner minimization algorithm. This step minimizes the augmented 
-        Lagrangian with respect to the slack variables only for a fixed set 
+        Compute a "magical step" to improve the convergence rate of the
+        inner minimization algorithm. This step minimizes the augmented
+        Lagrangian with respect to the slack variables only for a fixed set
         of decision variables.
         """
         alprob = self.alprob
@@ -358,7 +358,7 @@ class AugmentedLagrangianFramework(object):
 
     def get_active_bounds(self, x):
         """
-        Returns a list containing the indices of variables that are at 
+        Returns a list containing the indices of variables that are at
         either their lower or upper bound.
         """
         lower_active = where(x==self.alprob.Lvar)
@@ -369,8 +369,8 @@ class AugmentedLagrangianFramework(object):
 
     def least_squares_multipliers(self, x, **kwargs):
         """
-        Compute a least-squares estimate of the Lagrange multipliers for the 
-        current point. This may lead to faster convergence of the augmented 
+        Compute a least-squares estimate of the Lagrange multipliers for the
+        current point. This may lead to faster convergence of the augmented
         Lagrangian algorithm, at the expense of more Jacobian-vector products.
         """
         nlp = self.alprob.nlp
@@ -384,7 +384,7 @@ class AugmentedLagrangianFramework(object):
         # Determine which bounds are active to remove appropriate columns of J
         on_bound = self.get_active_bounds(x)
         not_on_bound = np.setdiff1d(np.arange(n, dtype=np.int), on_bound)
-        Jred = ReducedLinearOperator(J, np.arange(m, dtype=np.int), 
+        Jred = ReducedLinearOperator(J, np.arange(m, dtype=np.int),
             not_on_bound)
 
         if full_mult:
@@ -439,8 +439,8 @@ class AugmentedLagrangianFramework(object):
 
     def PostIteration(self, **kwargs):
         """
-        Override this method to perform additional work at the end of a 
-        major iteration. For example, use this method to restart an 
+        Override this method to perform additional work at the end of a
+        major iteration. For example, use this method to restart an
         approximate Hessian.
         """
         return None
@@ -469,7 +469,7 @@ class AugmentedLagrangianFramework(object):
         # First augmented lagrangian gradient evaluation
         dphi = self.alprob.grad(self.x)
 
-        # "Smart" initialization of slack variables using the magical step 
+        # "Smart" initialization of slack variables using the magical step
         # function that is already available
         m_step_init = self.magical_step(self.x, dphi)
         self.x += m_step_init
@@ -519,7 +519,7 @@ class AugmentedLagrangianFramework(object):
             self.iter += 1
 
             # Perform bound-constrained minimization
-            SBMIN = self.SetupInnerSolver()
+            SBMIN = self.SetupInnerSolver(**kwargs)
 
             SBMIN.Solve()
             self.x = SBMIN.x.copy()
@@ -682,6 +682,29 @@ class AugmentedLagrangianTronFramework(AugmentedLagrangianFramework):
     """
     def __init__(self, nlp, innerSolver, **kwargs):
         AugmentedLagrangianFramework.__init__(self, nlp, innerSolver, **kwargs)
+
+    def SetupInnerSolver(self, **kwargs):
+        return self.innerSolver(self.alprob, reltol=self.omega, x0=self.x, **kwargs)
+
+
+class AugmentedLagrangianPartialLbfgsTronFramework(AugmentedLagrangianQuasiNewtonFramework):
+    """
+    Augmented Lagrangian algorithm using TRON as inner solver and L-BFGS hessian approximation.
+    """
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianQuasiNewtonFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianPartialLbfgs(nlp,**kwargs)
+
+    def SetupInnerSolver(self, **kwargs):
+        return self.innerSolver(self.alprob, reltol=self.omega, x0=self.x, **kwargs)
+
+class AugmentedLagrangianPartialLsr1TronFramework(AugmentedLagrangianQuasiNewtonFramework):
+    """
+    Augmented Lagrangian algorithm using TRON as inner solver and L-SR1 hessian approximation.
+    """
+    def __init__(self, nlp, innerSolver, **kwargs):
+        AugmentedLagrangianQuasiNewtonFramework.__init__(self, nlp, innerSolver, **kwargs)
+        self.alprob = AugmentedLagrangianPartialLsr1(nlp,**kwargs)
 
     def SetupInnerSolver(self, **kwargs):
         return self.innerSolver(self.alprob, reltol=self.omega, x0=self.x, **kwargs)

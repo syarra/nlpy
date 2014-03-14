@@ -217,10 +217,11 @@ class TronFramework:
                 exitInner = self.task[:4] == 'CONV' # Difference between 2 successive iterates
                                                     # is sufficiently small.
 
-                try:
-                    self.PostIteration()
-                except UserExitRequest:
-                    exitUser = True
+                if not(self.iter==1 and exitInner==True):
+                    try:
+                        self.PostIteration()
+                    except UserExitRequest:
+                        exitUser = True
 
                 # Keep current iterate to use in the next QN update
                 self.x_old = self.x.copy()
@@ -236,7 +237,7 @@ class TronFramework:
                                                  self.gpnorm, cgiter_periter,
                                                  (f_old-self.f)/predred, delta))
 
-        self.tsolve = cputime() - t    # Solve time 
+        self.tsolve = cputime() - t    # Solve time
 
         # Set final solver status.
         if exitUser:
