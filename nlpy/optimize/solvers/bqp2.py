@@ -236,7 +236,8 @@ class BQP(object):
         # Check for local optimality.
         tol = 1.0e-6 * np.linalg.norm(x)
 
-        if np.linalg.norm(self.project(x + step*d) - x) < tol:
+        xps = self.project(x + step * d)
+        if np.linalg.norm(xps - x) < tol:
             return (x, qval, step)
 
         if np.dot(g, d) >= 0:
@@ -253,7 +254,6 @@ class BQP(object):
         if kwargs.get('use_bk_min', False):
             step = bk_min
 
-        xps = self.project(x + step * d)
         q_xps = qp.obj(xps)
         slope = np.dot(g, xps - x)
 
@@ -264,11 +264,12 @@ class BQP(object):
             slope = np.dot(g, xps - x)
 
         decrease = (q_xps < qval + factor * slope)
+        norm_x = np.linalg.norm(x, np.inf)
 
         if not decrease:
             # Perform projected Armijo linesearch in order to reduce the step
             # until a successful step is found.
-            while not decrease and step >= 1.0e-8:
+            while not decrease and step >= 1.0e-3 * norm_x:
                 step /= 6
                 xps = self.project(x + step * d)
                 q_xps = qp.obj(xps)
@@ -298,7 +299,7 @@ class BQP(object):
                 q_xps = q_ok
         q_xps = qp.obj(xps)
 
-        if q_xps>qval:
+        if q_xps > qval:
             xps = x.copy()
             q_xps = qval
         self.log.debug('Projected linesearch ends with q = %7.1e' % q_xps)
