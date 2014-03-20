@@ -17,7 +17,7 @@ def configuration(parent_package='',top_path=None):
     hsl_dir = nlpy_config.get('HSL', 'hsl_dir')
     metis_dir = nlpy_config.get('HSL', 'metis_dir')
     metis_lib = nlpy_config.get('HSL', 'metis_lib')
-    galahad_dir = nlpy_config.get('GALAHAD', 'galahad_dir')
+    #galahad_dir = nlpy_config.get('GALAHAD', 'galahad_dir')
     propack_dir = nlpy_config.get('PROPACK', 'propack_dir')
 
     config = Configuration('linalg', parent_package, top_path)
