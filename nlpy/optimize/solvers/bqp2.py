@@ -109,12 +109,12 @@ class BQP(object):
                                       symmetric=True)
 
         # Relative stopping tolerance in projected gradient iterations.
-        self.pgrad_reltol = kwargs.get('pgrad_reltol', 0.25)
+        self.pgrad_reltol = kwargs.get('pgrad_reltol', 0.1)
 
         # Relative stopping tolerance in conjugate gradient iterations.
         self.cg_reltol = kwargs.get('cg_reltol', 0.1)
         # Armijo-style linesearch parameter.
-        self.armijo_factor = kwargs.get('armijo_factor', 1.0e-2)
+        self.armijo_factor = kwargs.get('armijo_factor', 1.0e-4)
 
         self.cgiter = 0   # Total number of CG iterations.
 
@@ -234,7 +234,8 @@ class BQP(object):
             self.check_feasible(x)
 
         # Check for local optimality.
-        tol = 1.0e-6 * np.linalg.norm(x)
+        norm_x = np.linalg.norm(x, np.inf)
+        tol = 1.0e-6 * norm_x
 
         xps = self.project(x + step * d)
         if np.linalg.norm(xps - x) < tol:
@@ -264,13 +265,12 @@ class BQP(object):
             slope = np.dot(g, xps - x)
 
         decrease = (q_xps < qval + factor * slope)
-        norm_x = np.linalg.norm(x, np.inf)
 
         if not decrease:
             # Perform projected Armijo linesearch in order to reduce the step
             # until a successful step is found.
             while not decrease and step >= 1.0e-3 * norm_x:
-                step /= 6
+                step /= 3
                 xps = self.project(x + step * d)
                 q_xps = qp.obj(xps)
                 self.log.debug('  Backtracking with step = %7.1e q = %7.1e' % (step, q_xps))
@@ -285,7 +285,7 @@ class BQP(object):
                 q_ok = q_xps
                 q_prev = q_xps
                 while increase and step <= bk_max:
-                    step *= 6
+                    step *= 1.5
                     xps = self.project(x + step * d)
                     q_xps = qp.obj(xps)
                     self.log.debug('  Extrapolating with step = %7.1e q = %7.1e' % (step, q_xps))
@@ -424,7 +424,7 @@ class BQP(object):
         # Compute stopping tolerance.
         g = qp.grad(x)
         pg = self.pgrad(x, g=g, active_set=(lower, upper))
-        pgNorm = np.linalg.norm(pg)
+        pgNorm = np.linalg.norm(pg, np.inf)
         self.pg0 = pgNorm
 
         stoptol = reltol * pgNorm + abstol
@@ -458,7 +458,7 @@ class BQP(object):
             qval = qp.obj(x)
             self.log.debug('q after projected gradient = %8.2g' % qval)
             pg = self.pgrad(x, g=g, active_set=(lower, upper))
-            pgNorm = np.linalg.norm(pg)
+            pgNorm = np.linalg.norm(pg, np.inf)
 
             if pgNorm <= stoptol:
                 exitOptimal = True
@@ -519,7 +519,7 @@ class BQP(object):
 
             g = qp.grad(x)
             pg = self.pgrad(x, g=g) #, active_set=(lower, upper))
-            pgNorm = np.linalg.norm(pg)
+            pgNorm = np.linalg.norm(pg, np.inf)
 
             if pgNorm <= stoptol:
                 exitOptimal = True
@@ -548,7 +548,7 @@ class BQP(object):
 
                 beforeCG = qp.Hprod
                 cg = SufficientDecreaseCG(Zg, ZHZ, detect_stalling=True)
-                cg.Solve(abstol=1e-6, reltol=1.0e-4)
+                cg.Solve(abstol=1e-2, reltol=1.0e-1)
                 afterCG = qp.Hprod
                 self.hprod_bqp_cg += afterCG - beforeCG
 
@@ -576,7 +576,7 @@ class BQP(object):
 
                 g = qp.grad(x)
                 pg = self.pgrad(x, g=g, active_set=(lower, upper))
-                pgNorm = np.linalg.norm(pg)
+                pgNorm = np.linalg.norm(pg, np.inf)
 
                 # Exit if second CG pass results in optimality
                 if pgNorm <= stoptol:
