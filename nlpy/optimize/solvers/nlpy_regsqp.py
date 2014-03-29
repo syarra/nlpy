@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
 from nlpy import __version__
-from nlpy.model import MFAmplModel
-from nlpy.optimize.solvers.regsqp import RegSQPSolver
+from nlpy.model import MFAmplModel, AmplModel
+from nlpy.optimize.solvers.regsqp import RegSQPSolver, RegSQPBFGSIterativeSolver
 from nlpy.tools.timing import cputime
 from optparse import OptionParser
 import numpy
+from pykrylov.lls import LSMRFramework
 import nlpy.tools.logs
 import sys, logging, os
 
@@ -16,6 +17,7 @@ fmt = logging.Formatter('%(name)-15s %(levelname)-8s %(message)s')
 hndlr = logging.StreamHandler(sys.stdout)
 hndlr.setFormatter(fmt)
 log.addHandler(hndlr)
+log.propagate = False
 
 # Configure the solver logger.
 sublogger = logging.getLogger('regsqp.solver')
@@ -26,15 +28,14 @@ sublogger.propagate = False
 
 def pass_to_regsqp(nlp, **kwargs):
 
-    verbose = (kwargs['print_level'] == 2)
     qn = kwargs.pop('quasi_newton')
 
     t = cputime()
     if qn:
         # This will need to be fixed when the quasi newton solver will be ready
-        regsqpsolver = ReqQnSQPSolver(nlp, logger_name='regsqp.solver', **kwargs)
+        regsqpsolver = RegSQPBFGSIterativeSolver(nlp, LSMRFramework, **kwargs)
     else:
-        regsqpsolver = RegSQPSolver(nlp, logger_name='regsqp.solver', **kwargs)
+        regsqpsolver = RegSQPSolver(nlp, **kwargs)
     t_setup = cputime() - t    # Setup time.
 
     regsqpsolver.solve()
@@ -63,7 +64,7 @@ parser.add_option("-q", "--quasi_newton", action="store_true",
                   default=False, dest="quasi_newton",
                   help="Use BFGS approximation of Hessian")
 parser.add_option("-i", "--iter", action="store", type="int", default=None,
-                  dest="maxit",  help="Specify maximum number of iterations")
+                  dest="maxiter",  help="Specify maximum number of iterations")
 parser.add_option("-o", "--print_level", action="store", type="int",
                   default=0, dest="print_level",
                   help="Print iterations detail (0, 1 or 2)")
@@ -73,8 +74,8 @@ parser.add_option("-o", "--print_level", action="store", type="int",
 
 # Translate options to input arguments.
 opts = {}
-if options.maxit is not None:
-    opts['maxit'] = options.maxit
+if options.maxiter is not None:
+    opts['maxiter'] = options.maxiter
 opts['abstol'] = options.abstol
 opts['reltol'] = options.reltol
 opts['theta'] = options.theta
@@ -101,7 +102,10 @@ if multiple_problems:
 # Solve each problem in turn.
 for ProblemName in args:
 
-    nlp = MFAmplModel(ProblemName)
+    if options.quasi_newton:
+      nlp = MFAmplModel(ProblemName)
+    else:
+      nlp = AmplModel(ProblemName)
 
     # Check for equality-constrained problem.
     n_ineq = nlp.nlowerC + nlp.nupperC + nlp.nrangeC

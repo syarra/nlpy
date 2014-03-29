@@ -2,12 +2,12 @@ from nlpy.optimize.ls.pymswolfe import StrongWolfeLineSearch
 from nlpy.tools import norms
 from nlpy.tools.timing import cputime
 import numpy
-import sys
+import numpy.linalg
+import logging
 
 __docformat__ = 'restructuredtext'
 
-
-class InverseLBFGS(object):
+class InverseLBFGS:
     """
     Class InverseLBFGS is a container used to store and manipulate
     limited-memory BFGS matrices. It may be used, e.g., in a LBFGS solver for
@@ -54,7 +54,7 @@ class InverseLBFGS(object):
         self.insert = 0
 
         # Threshold on dot product s'y to accept a new pair (s,y).
-        self.accept_threshold = 1.0e-12
+        self.accept_threshold = 1.0e-20
 
         # Storage of the (s,y) pairs
         self.s = numpy.empty((self.n, self.npairs), 'd')
@@ -81,11 +81,21 @@ class InverseLBFGS(object):
         ys = numpy.dot(new_s, new_y)
         if ys > self.accept_threshold:
             insert = self.insert
-            self.s[:, insert] = new_s.copy()
-            self.y[:, insert] = new_y.copy()
+            self.s[:,insert] = new_s.copy()
+            self.y[:,insert] = new_y.copy()
             self.ys[insert] = ys
             self.insert += 1
             self.insert = self.insert % self.npairs
+        return
+
+    def restart(self):
+        """
+        Restart the approximation by clearing all data on past updates.
+        """
+        self.ys = [None] * self.npairs
+        self.s = numpy.empty((self.n, self.npairs), 'd')
+        self.y = numpy.empty((self.n, self.npairs), 'd')
+        self.insert = 0
         return
 
     def matvec(self, v):
@@ -102,25 +112,25 @@ class InverseLBFGS(object):
         self.numMatVecs += 1
 
         q = v.copy()
-        s, y, ys, alpha = self.s, self.y, self.ys, self.alpha
+        s = self.s ; y = self.y ; ys = self.ys ; alpha = self.alpha
         for i in range(self.npairs):
             k = (self.insert - 1 - i) % self.npairs
             if ys[k] is not None:
-                alpha[k] = numpy.dot(s[:, k], q) / ys[k]
-                q -= alpha[k] * y[:, k]
+                alpha[k] = numpy.dot(s[:,k], q)/ys[k]
+                q -= alpha[k] * y[:,k]
 
         r = q
         if self.scaling:
             last = (self.insert - 1) % self.npairs
             if ys[last] is not None:
-                self.gamma = ys[last] / numpy.dot(y[:, last], y[:, last])
+                self.gamma = ys[last]/numpy.dot(y[:,last],y[:,last])
                 r *= self.gamma
 
         for i in range(self.npairs):
             k = (self.insert + i) % self.npairs
             if ys[k] is not None:
-                beta = numpy.dot(y[:, k], r) / ys[k]
-                r += (alpha[k] - beta) * s[:, k]
+                beta = numpy.dot(y[:,k], r)/ys[k]
+                r += (alpha[k] - beta) * s[:,k]
         return r
 
     def solve(self, v):
@@ -135,33 +145,255 @@ class InverseLBFGS(object):
         """
         return self.matvec(v)
 
-    def __mul__(self, v):
+    def __mult__(self, v):
         """
         This is an alias for matvec.
         """
         return self.matvec(v)
 
-    def __repr__(self):
-        s = 'InverseLBFGS instance\n'
-        s += ' dim = %d\n' % self.n
-        s += ' npairs = %d\n' % self.npairs
-        s += ' scaling = %s\n' % repr(self.scaling)
-        s += ' current insertion point = %d\n' % self.insert
+
+class LBFGS(InverseLBFGS):
+    """
+    Class LBFGS is similar to InverseLBFGS, except that it operates
+    on the Hessian approximation directly, rather than forming the inverse.
+    Additional information is stored to compute this approximation
+    efficiently.
+
+    This form is useful in trust region methods, where the approximate Hessian
+    is used in the model problem.
+    """
+
+    def __init__(self, n, npairs=5, **kwargs):
+        InverseLBFGS.__init__(self, n, npairs, **kwargs)
+
+        # Setup the logger. Install a NullHandler if no output needed.
+        logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
+        self.log = logging.getLogger(logger_name)
+        self.log.info('Logger created')
+
+    def matvec(self, v):
+        """
+        Compute a matrix-vector product between the current limited-memory
+        positive-definite approximation to the direct Hessian matrix and the
+        vector v using the outer product representation.
+
+        Note: there is probably some optimization that could be done in this
+        function with respect to memory use and storing key dot products.
+        """
+        self.numMatVecs += 1
+
+        q = v.copy()
+        r = v.copy()
+        s = self.s ; y = self.y ; ys = self.ys
+        prodn = 2*self.npairs
+        a = numpy.zeros(prodn,'d')
+        minimat = numpy.zeros([prodn,prodn],'d')
+
+        if self.scaling:
+            last = (self.insert - 1) % self.npairs
+            if ys[last] is not None:
+                self.gamma = ys[last]/numpy.dot(y[:,last],y[:,last])
+                r /= self.gamma
+
+        paircount = 0
         for i in range(self.npairs):
-            k = (self.insert - 1 - i) % self.npairs
-            if self.ys[k] is not None:
-                s += 's[%d] = %s\n' % (k, self.s[:, k])
+            k = (self.insert + i) % self.npairs
+            if ys[k] is not None:
+                a[paircount] = numpy.dot(r[:],s[:,k])
+                paircount += 1
 
+        j = 0
         for i in range(self.npairs):
-            k = (self.insert - 1 - i) % self.npairs
-            if self.ys[k] is not None:
-                s += 'y[%d] = %s\n' % (k, self.y[:, k])
-        return s
+            k = (self.insert + i) % self.npairs
+            if ys[k] is not None:
+                a[paircount+j] = numpy.dot(q[:],y[:,k])
+                j += 1
+
+        # Populate small matrix to be inverted
+        k_ind = 0
+        for i in range(self.npairs):
+            k = (self.insert + i) % self.npairs
+            if ys[k] is not None:
+                minimat[paircount+k_ind,paircount+k_ind] = -ys[k]
+                minimat[k_ind,k_ind] = numpy.dot(s[:,k],s[:,k])/self.gamma
+                l_ind = 0
+                for j in range(i):
+                    l = (self.insert + j) % self.npairs
+                    if ys[l] is not None:
+                        minimat[k_ind,paircount+l_ind] = numpy.dot(s[:,k],y[:,l])
+                        minimat[paircount+l_ind,k_ind] = minimat[k_ind,paircount+l_ind]
+                        minimat[k_ind,l_ind] = numpy.dot(s[:,k],s[:,l])/self.gamma
+                        minimat[l_ind,k_ind] = minimat[k_ind,l_ind]
+                        l_ind += 1
+                k_ind += 1
+
+        if paircount > 0:
+            rng = 2*paircount
+            b = numpy.linalg.solve(minimat[0:rng,0:rng],a[0:rng])
+
+        for i in range(paircount):
+            k = (self.insert - paircount + i) % self.npairs
+            r -= (b[i]/self.gamma)*s[:,k]
+            r -= b[i+paircount]*y[:,k]
+
+        return r
+
+    def store(self, new_s, new_y):
+        InverseLBFGS.store(self,new_s,new_y)
+        ys = numpy.dot(new_s, new_y)
+        if ys < self.accept_threshold:
+            self.log.debug('Not accepting LBFGS update: ys = %g' % ys)
+        return
+
+class LBFGS_unrolling(InverseLBFGS):
+    """
+    Class LBFGS is similar to InverseLBFGS, except that it operates
+    on the Hessian approximation directly, rather than forming the inverse.
+    Additional information is stored to compute this approximation
+    efficiently.
+
+    This form is useful in trust region methods, where the approximate Hessian
+    is used in the model problem.
+    """
+
+    def __init__(self, n, npairs=5, **kwargs):
+        InverseLBFGS.__init__(self, n, npairs, **kwargs)
+
+        # Setup the logger. Install a NullHandler if no output needed
+        logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
+        self.log = logging.getLogger(logger_name)
+        #self.log.addHandler(logging.NullHandler())
+        self.log.info('Logger created')
+
+    def matvec(self, v):
+        """
+        Compute a matrix-vector product between the current limited-memory
+        positive-definite approximation to the direct Hessian matrix and the
+        vector v using the outer product representation.
+
+        Note: there is probably some optimization that could be done in this
+        function with respect to memory use and storing key dot products.
+        """
+        self.numMatVecs += 1
+
+        q = v.copy()
+        s = self.s ; y = self.y ; ys = self.ys
+        b = numpy.zeros((self.n, self.npairs), 'd')
+        a = numpy.zeros((self.n, self.npairs), 'd')
+
+        paircount = 0
+        for i in range(self.npairs):
+            k = (self.insert + i) % self.npairs
+            if ys[k] is not None:
+                b[:,k] = y[:,k] / ys[k]**.5
+                bv = numpy.dot(b[:,k], v[:])
+                q += bv * b[:,k]
+                a[:,k] = s[:,k].copy()
+                for j in range(i):
+                    l = (self.insert + j) % self.npairs
+                    if ys[l] is not None:
+                        a[:,k] += numpy.dot(b[:,l], s[:,k]) * b[:,l]
+                        a[:,k] -= numpy.dot(a[:,l], s[:,k]) * a[:,l]
+                a[:,k] /= numpy.dot(s[:,k], a[:,k])**.5
+                q -= numpy.dot(numpy.outer(a[:,k],a[:,k]), v[:])#numpy.dot(a[:,k], v[:]) * a[:,k]
+                paircount += 1
+
+        return q
+
+    def store(self, new_s, new_y):
+        InverseLBFGS.store(self,new_s,new_y)
+        ys = numpy.dot(new_s, new_y)
+        if ys < self.accept_threshold:
+            self.log.debug('Not accepting LBFGS update: ys = %g' % ys)
+        return
+
+class LBFGS_structured(InverseLBFGS):
+    """
+    LBFGS quasi newton using an unrolling formula.
+    For this procedure see [Nocedal06]
+    """
+    def __init__(self, n, npairs=5, **kwargs):
+        InverseLBFGS.__init__(self, n, npairs, **kwargs)
+        self.yd = numpy.empty((self.n, self.npairs), 'd')
+        self.accept_threshold = 1e-8
+        # Setup the logger. Install a NullHandler if no output needed
+        logger_name = kwargs.get('logger_name', 'nlpy.lbfgs')
+        self.log = logging.getLogger(logger_name)
+        #self.log.addHandler(logging.NullHandler())
+        self.log.info('Logger created')
 
 
+    def matvec(self, v):
+        """
+        Compute a matrix-vector product between the current limited-memory
+        approximation to the Hessian matrix and the vector v using
+        the outer product representation.
+
+        Note: there is probably some optimization that could be done in this
+        function with respect to memory use and storing key dot products.
+        """
+        self.numMatVecs += 1
+
+        q = v.copy()
+        s = self.s ; y = self.y ; yd = self.yd ; ys = self.ys
+        npairs = self.npairs
+        a = numpy.zeros([self.n, npairs])
+        ad = numpy.zeros([self.n, npairs])
+
+        aTs = numpy.zeros([npairs,1])
+        adTs = numpy.zeros([npairs,1])
+
+        if self.scaling:
+            last = (self.insert - 1) % npairs
+            if ys[last] is not None:
+                self.gamma = ys[last]/numpy.dot(y[:,last],y[:,last])
+                q /= self.gamma
+
+        for i in range(npairs):
+            k = (self.insert + i) % npairs
+            if ys[k] is not None:
+                coef = (self.gamma*ys[k]/numpy.dot(s[:,k],s[:,k]))**0.5
+                a[:,k] = y[:,k] + coef * s[:,k]/self.gamma
+                ad[:,k] = yd[:,k] - s[:,k]/self.gamma
+                for j in range(i):
+                    l = (self.insert + j) % npairs
+                    if ys[l] is not None:
+                        alTs = numpy.dot(a[:,l], s[:,k])/aTs[l]
+                        adlTs = numpy.dot(ad[:,l], s[:,k])
+                        update = alTs/aTs[l] * ad[:,l] + adlTs/aTs[l] * a[:,l] - adTs[l]/aTs[l] * alTs * a[:,l]
+                        a[:,k] += coef * update.copy()
+                        ad[:,k] -= update.copy()
+                aTs[k] = numpy.dot(a[:,k], s[:,k])
+                adTs[k] = numpy.dot(ad[:,k], s[:,k])
+                aTv = numpy.dot(a[:,k],v[:])
+                adTv = numpy.dot(ad[:,k],v[:])
+                q += aTv/aTs[k] * ad[:,k] + adTv/aTs[k] * a[:,k] - aTv*adTs[k]/aTs[k]**2 * a[:,k]
+        return q
+
+    def store(self, new_s, new_y, new_yd):
+        """
+        Store the new pair (new_s,new_y, new_yd). A new pair
+        is only accepted if
+        | y_k' s_k + (y's s_k' B_k s_k)**.5 | >= 1e-8.
+        """
+        ys = numpy.dot(new_s, new_y)
+        Bs = self.matvec(new_s)
+        ypBs = ys + (ys * numpy.dot(new_s, Bs))**0.5
+
+        if ypBs>=self.accept_threshold:
+            insert = self.insert
+            self.s[:,insert] = new_s.copy()
+            self.y[:,insert] = new_y.copy()
+            self.yd[:,insert] = new_yd.copy()
+            self.ys[insert] = ys
+            self.insert += 1
+            self.insert = self.insert % self.npairs
+        else:
+            self.log.debug('Not accepting LBFGS update')
+        return
 
 
-class LBFGSFramework(object):
+class LBFGSFramework:
     """
     Class LBFGSFramework provides a framework for solving unconstrained
     optimization problems by means of the limited-memory BFGS method.
@@ -197,7 +429,7 @@ class LBFGSFramework(object):
         self.silent = kwargs.get('silent', False)
         self.abstol = kwargs.get('abstol', 1.0e-6)
         self.reltol = kwargs.get('reltol', self.nlp.stop_d)
-        self.iter = 0
+        self.iter   = 0
         self.nresets = 0
         self.converged = False
 
@@ -211,8 +443,9 @@ class LBFGSFramework(object):
         self.g0 = self.gnorm
 
         # Optional arguments
-        self.maxiter = kwargs.get('maxiter', max(10 * self.nlp.n, 1000))
+        self.maxiter = kwargs.get('maxiter', max(10*self.nlp.n, 1000))
         self.tsolve = 0.0
+
 
     def solve(self):
 
@@ -235,7 +468,7 @@ class LBFGSFramework(object):
 
             # Prepare for modified More-Thuente linesearch
             if self.iter == 0:
-                stp0 = 1.0 / self.gnorm
+                stp0 = 1.0/self.gnorm
             else:
                 stp0 = 1.0
             SWLS = StrongWolfeLineSearch(self.f,
@@ -244,7 +477,7 @@ class LBFGSFramework(object):
                                          d,
                                          lambda z: self.nlp.obj(z),
                                          lambda z: self.nlp.grad(z),
-                                         stp=stp0)
+                                         stp = stp0)
             # Perform linesearch
             SWLS.search()
 
@@ -257,10 +490,13 @@ class LBFGSFramework(object):
             self.g = SWLS.g
             self.gnorm = norms.norm2(self.g)
             self.f = SWLS.f
+            #stoptol = self.nlp.stop_d * max(1.0, norms.norm2(self.x))
 
             # Update inverse Hessian approximation using the most recent pair
             self.lbfgs.store(s, y)
             self.iter += 1
 
+
         self.tsolve = cputime() - tstart
         self.converged = (self.iter < self.maxiter)
+
